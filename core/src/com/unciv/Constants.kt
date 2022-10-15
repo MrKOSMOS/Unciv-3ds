@@ -4,8 +4,8 @@ object Constants {
     const val worker = "Worker"
     const val settler = "Settler"
     const val eraSpecificUnit = "Era Starting Unit"
-    const val spreadReligionAbilityCount = "Spread Religion"
-    const val removeHeresyAbilityCount = "Remove Foreign religions from your own cities"
+    const val spreadReligion = "Spread Religion"
+    const val removeHeresy = "Remove Foreign religions from your own cities"
 
     const val impassable = "Impassable"
     const val ocean = "Ocean"
@@ -56,6 +56,7 @@ object Constants {
     // Easter egg name. Is to avoid conflicts when players name their own religions.
     // This religion name should never be displayed.
     const val noReligionName = "The religion of TheLegend27"
+    const val spyHideout = "Spy Hideout"
 
     const val neutralVictoryType = "Neutral"
 
@@ -79,12 +80,16 @@ object Constants {
 
     const val dropboxMultiplayerServer = "Dropbox"
 
+    const val defaultTileset = "HexaRealm"
+    const val defaultSkin = "Minimal"
+
     /**
      * Use this to determine whether a [MapUnit][com.unciv.logic.map.MapUnit]'s movement is exhausted
      * (currentMovement <= this) if and only if a fuzzy comparison is needed to account for Float rounding errors.
      * _Most_ checks do compare to 0!
      */
     const val minimumMovementEpsilon = 0.05f  // 0.1f was used previously, too - here for global searches
+    const val aiPreferInquisitorOverMissionaryPressureDifference = 3000f
 
     const val defaultFontSize = 18
     const val headingFontSize = 24

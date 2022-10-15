@@ -8,6 +8,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.utils.Align
 import com.unciv.logic.GameInfo
 import com.unciv.logic.GameStarter
+import com.unciv.logic.UncivShowableException
 import com.unciv.logic.map.MapParameters
 import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.MapSizeNew
@@ -25,7 +26,6 @@ import com.unciv.ui.mapeditor.MapEditorScreen
 import com.unciv.ui.multiplayer.MultiplayerScreen
 import com.unciv.ui.newgamescreen.NewGameScreen
 import com.unciv.ui.pickerscreens.ModManagementScreen
-import com.unciv.ui.popup.ExitGamePopup
 import com.unciv.ui.popup.Popup
 import com.unciv.ui.popup.ToastPopup
 import com.unciv.ui.popup.closeAllPopups
@@ -38,11 +38,11 @@ import com.unciv.ui.tutorials.EasterEggRulesets.modifyForEasterEgg
 import com.unciv.ui.utils.AutoScrollPane
 import com.unciv.ui.utils.BaseScreen
 import com.unciv.ui.utils.KeyCharAndCode
+import com.unciv.ui.utils.RecreateOnResize
 import com.unciv.ui.utils.UncivTooltip.Companion.addTooltip
 import com.unciv.ui.utils.extensions.center
 import com.unciv.ui.utils.extensions.keyShortcuts
 import com.unciv.ui.utils.extensions.onActivation
-import com.unciv.ui.utils.extensions.onClick
 import com.unciv.ui.utils.extensions.setFontSize
 import com.unciv.ui.utils.extensions.surroundWithCircle
 import com.unciv.ui.utils.extensions.toLabel
@@ -52,7 +52,7 @@ import com.unciv.utils.concurrency.launchOnGLThread
 import kotlin.math.min
 
 
-class MainMenuScreen: BaseScreen() {
+class MainMenuScreen: BaseScreen(), RecreateOnResize {
     private val backgroundTable = Table().apply { background= ImageGetter.getBackground(Color.WHITE) }
     private val singleColumn = isCrampedPortrait()
     private var easterEggRuleset: Ruleset? = null  // Cache it so the next 'egg' can be found in Civilopedia
@@ -140,7 +140,7 @@ class MainMenuScreen: BaseScreen() {
         val column1 = Table().apply { defaults().pad(10f).fillX() }
         val column2 = if (singleColumn) column1 else Table().apply { defaults().pad(10f).fillX() }
 
-        if (game.gameSaver.autosaveExists()) {
+        if (game.files.autosaveExists()) {
             val resumeTable = getMenuButton("Resume","OtherIcons/Resume", 'r')
                 { resumeGame() }
             column1.add(resumeTable).row()
@@ -151,25 +151,25 @@ class MainMenuScreen: BaseScreen() {
         column1.add(quickstartTable).row()
 
         val newGameButton = getMenuButton("Start new game", "OtherIcons/New", 'n')
-            { game.setScreen(NewGameScreen(this)) }
+            { game.pushScreen(NewGameScreen()) }
         column1.add(newGameButton).row()
 
-        if (game.gameSaver.getSaves().any()) {
+        if (game.files.getSaves().any()) {
             val loadGameTable = getMenuButton("Load game", "OtherIcons/Load", 'l')
-                { game.setScreen(LoadGameScreen(this)) }
+                { game.pushScreen(LoadGameScreen(this)) }
             column1.add(loadGameTable).row()
         }
 
         val multiplayerTable = getMenuButton("Multiplayer", "OtherIcons/Multiplayer", 'm')
-            { game.setScreen(MultiplayerScreen(this)) }
+            { game.pushScreen(MultiplayerScreen(this)) }
         column2.add(multiplayerTable).row()
 
         val mapEditorScreenTable = getMenuButton("Map editor", "OtherIcons/MapEditor", 'e')
-            { game.setScreen(MapEditorScreen()) }
+            { game.pushScreen(MapEditorScreen()) }
         column2.add(mapEditorScreenTable).row()
 
         val modsTable = getMenuButton("Mods", "OtherIcons/Mods", 'd')
-            { game.setScreen(ModManagementScreen()) }
+            { game.pushScreen(ModManagementScreen()) }
         column2.add(modsTable).row()
 
         val optionsTable = getMenuButton("Options", "OtherIcons/Options", 'o')
@@ -192,19 +192,19 @@ class MainMenuScreen: BaseScreen() {
                 closeAllPopups()
                 return@add
             }
-            ExitGamePopup(this)
+            game.popScreen()
         }
 
-        val helpButton = "?".toLabel(fontSize = 32)
+        val helpButton = "?".toLabel(fontSize = 48)
             .apply { setAlignment(Align.center) }
-            .surroundWithCircle(40f, color = ImageGetter.getBlue())
+            .surroundWithCircle(60f, color = ImageGetter.getBlue())
             .apply { actor.y -= 2.5f } // compensate font baseline (empirical)
-            .surroundWithCircle(42f, resizeActor = false)
+            .surroundWithCircle(64f, resizeActor = false)
         helpButton.touchable = Touchable.enabled
         helpButton.onActivation { openCivilopedia() }
         helpButton.keyShortcuts.add(Input.Keys.F1)
-        helpButton.addTooltip(KeyCharAndCode(Input.Keys.F1), 20f)
-        helpButton.setPosition(20f, 20f)
+        helpButton.addTooltip(KeyCharAndCode(Input.Keys.F1), 30f)
+        helpButton.setPosition(30f, 30f)
         stage.addActor(helpButton)
     }
 
@@ -213,6 +213,7 @@ class MainMenuScreen: BaseScreen() {
         val curWorldScreen = game.worldScreen
         if (curWorldScreen != null) {
             game.resetToWorldScreen()
+            ImageGetter.ruleset = game.gameInfo!!.ruleSet
             curWorldScreen.popups.filterIsInstance(WorldScreenMenuPopup::class.java).forEach(Popup::close)
         } else {
             QuickSave.autoLoadGame(this)
@@ -226,7 +227,17 @@ class MainMenuScreen: BaseScreen() {
             val newGame: GameInfo
             // Can fail when starting the game...
             try {
-                newGame = GameStarter.startNewGame(GameSetupInfo.fromSettings("Chieftain"))
+                val gameInfo = GameSetupInfo.fromSettings("Chieftain")
+                if (gameInfo.gameParameters.victoryTypes.isEmpty()) {
+                    val ruleSet = RulesetCache.getComplexRuleset(gameInfo.gameParameters)
+                    gameInfo.gameParameters.victoryTypes.addAll(ruleSet.victories.keys)
+                }
+                newGame = GameStarter.startNewGame(gameInfo)
+
+            } catch (notAPlayer: UncivShowableException) {
+                val (message) = LoadGameScreen.getLoadExceptionMessage(notAPlayer)
+                launchOnGLThread { ToastPopup(message, this@MainMenuScreen) }
+                return@run
             } catch (ex: Exception) {
                 launchOnGLThread { ToastPopup(errorText, this@MainMenuScreen) }
                 return@run
@@ -238,6 +249,11 @@ class MainMenuScreen: BaseScreen() {
             } catch (outOfMemory: OutOfMemoryError) {
                 launchOnGLThread {
                     ToastPopup("Not enough memory on phone to load game!", this@MainMenuScreen)
+                }
+            } catch (notAPlayer: UncivShowableException) {
+                val (message) = LoadGameScreen.getLoadExceptionMessage(notAPlayer)
+                launchOnGLThread {
+                    ToastPopup(message, this@MainMenuScreen)
                 }
             } catch (ex: Exception) {
                 launchOnGLThread {
@@ -256,12 +272,8 @@ class MainMenuScreen: BaseScreen() {
         UncivGame.Current.translations.translationActiveMods = ruleset.mods
         ImageGetter.setNewRuleset(ruleset)
         setSkin()
-        game.setScreen(CivilopediaScreen(ruleset, this))
+        game.pushScreen(CivilopediaScreen(ruleset))
     }
 
-    override fun resize(width: Int, height: Int) {
-        if (stage.viewport.screenWidth != width || stage.viewport.screenHeight != height) {
-            game.setScreen(MainMenuScreen())
-        }
-    }
+    override fun recreate(): BaseScreen = MainMenuScreen()
 }

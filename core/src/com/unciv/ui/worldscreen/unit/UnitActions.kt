@@ -2,8 +2,8 @@ package com.unciv.ui.worldscreen.unit
 
 import com.unciv.Constants
 import com.unciv.UncivGame
-import com.unciv.logic.automation.UnitAutomation
-import com.unciv.logic.automation.WorkerAutomation
+import com.unciv.logic.automation.unit.UnitAutomation
+import com.unciv.logic.automation.unit.WorkerAutomation
 import com.unciv.logic.city.CityInfo
 import com.unciv.logic.civilization.CivilizationInfo
 import com.unciv.logic.civilization.NotificationIcon
@@ -24,7 +24,7 @@ import com.unciv.models.stats.Stats
 import com.unciv.models.translations.tr
 import com.unciv.ui.pickerscreens.ImprovementPickerScreen
 import com.unciv.ui.pickerscreens.PromotionPickerScreen
-import com.unciv.ui.popup.YesNoPopup
+import com.unciv.ui.popup.ConfirmPopup
 import com.unciv.ui.popup.hasOpenPopups
 import com.unciv.ui.utils.extensions.toPercent
 import com.unciv.ui.worldscreen.WorldScreen
@@ -57,6 +57,7 @@ object UnitActions {
         addUnitUpgradeAction(unit, actionList)
         addPillageAction(unit, actionList, worldScreen)
         addParadropAction(unit, actionList)
+        addAirSweepAction(unit, actionList)
         addSetupAction(unit, actionList)
         addFoundCityAction(unit, actionList, tile)
         addBuildingImprovementsAction(unit, actionList, tile, worldScreen, unitTable)
@@ -127,7 +128,7 @@ object UnitActions {
                 val disbandText = if (unit.currentTile.getOwner() == unit.civInfo)
                     "Disband this unit for [${unit.baseUnit.getDisbandGold(unit.civInfo)}] gold?".tr()
                 else "Do you really want to disband this unit?".tr()
-                YesNoPopup(disbandText, UncivGame.Current.worldScreen!!) { unit.disband(); worldScreen.shouldUpdate = true }.open()
+                ConfirmPopup(UncivGame.Current.worldScreen!!, disbandText, "Disband unit") { unit.disband(); worldScreen.shouldUpdate = true }.open()
             }
         }.takeIf { unit.currentMovement > 0 })
     }
@@ -204,7 +205,7 @@ object UnitActions {
                     else {
                         // ask if we would be breaking a promise
                         val text = "Do you want to break your promise to [$leaders]?"
-                        YesNoPopup(text, UncivGame.Current.worldScreen!!, action = foundAction).open(force = true)
+                        ConfirmPopup(UncivGame.Current.worldScreen!!, text, "Break promise", action = foundAction).open(force = true)
                     }
                 }
             )
@@ -235,7 +236,7 @@ object UnitActions {
         // promotion does not consume movement points, but is not allowed if a unit has exhausted its movement or has attacked
         actionList += UnitAction(UnitActionType.Promote,
             action = {
-                UncivGame.Current.setScreen(PromotionPickerScreen(unit))
+                UncivGame.Current.pushScreen(PromotionPickerScreen(unit))
             }.takeIf { unit.currentMovement > 0 && unit.attacksThisTurn == 0 })
     }
 
@@ -267,6 +268,21 @@ object UnitActions {
             })
     }
 
+    private fun addAirSweepAction(unit: MapUnit, actionList: ArrayList<UnitAction>) {
+        val airsweepUniques =
+            unit.getMatchingUniques(UniqueType.CanAirsweep)
+        if (!airsweepUniques.any()) return
+        actionList += UnitAction(UnitActionType.AirSweep,
+            isCurrentAction = unit.isPreparingAirSweep(),
+            action = {
+                if (unit.isPreparingAirSweep()) unit.action = null
+                else unit.action = UnitActionType.AirSweep.value
+            }.takeIf {
+                unit.canAttack()
+            }
+        )
+    }
+
     private fun addPillageAction(unit: MapUnit, actionList: ArrayList<UnitAction>, worldScreen: WorldScreen) {
         val pillageAction = getPillageAction(unit)
             ?: return
@@ -275,7 +291,15 @@ object UnitActions {
         else actionList += UnitAction(type = UnitActionType.Pillage) {
             if (!worldScreen.hasOpenPopups()) {
                 val pillageText = "Are you sure you want to pillage this [${unit.currentTile.improvement}]?"
-                YesNoPopup(pillageText, UncivGame.Current.worldScreen!!) { (pillageAction.action)(); worldScreen.shouldUpdate = true }.open()
+                ConfirmPopup(
+                    UncivGame.Current.worldScreen!!,
+                    pillageText,
+                    "Pillage",
+                    true
+                ) {
+                    (pillageAction.action)()
+                    worldScreen.shouldUpdate = true
+                }.open()
             }
         }
     }
@@ -453,7 +477,7 @@ object UnitActions {
         actionList += UnitAction(UnitActionType.ConstructImprovement,
             isCurrentAction = unit.currentTile.hasImprovementInProgress(),
             action = {
-                worldScreen.game.setScreen(ImprovementPickerScreen(tile, unit) { unitTable.selectUnit() })
+                worldScreen.game.pushScreen(ImprovementPickerScreen(tile, unit) { unitTable.selectUnit() })
             }.takeIf { couldConstruct }
         )
     }
@@ -518,7 +542,7 @@ object UnitActions {
                     action = {
                         tile.getCity()!!.cityConstructions.apply {
                             //http://civilization.wikia.com/wiki/Great_engineer_(Civ5)
-                            addProductionPoints(((300 + 30 * tile.getCity()!!.population.population) * unit.civInfo.gameInfo.gameParameters.gameSpeed.modifier).toInt())
+                            addProductionPoints(((300 + 30 * tile.getCity()!!.population.population) * unit.civInfo.gameInfo.speed.productionCostModifier).toInt())
                             constructIfEnough()
                         }
 
@@ -539,7 +563,7 @@ object UnitActions {
 
                 //http://civilization.wikia.com/wiki/Great_engineer_(Civ5)
                 val productionPointsToAdd = min(
-                    (300 + 30 * tile.getCity()!!.population.population) * unit.civInfo.gameInfo.gameParameters.gameSpeed.modifier,
+                    (300 + 30 * tile.getCity()!!.population.population) * unit.civInfo.gameInfo.speed.productionCostModifier,
                     cityConstructions.getRemainingWork(cityConstructions.currentConstructionFromQueue).toFloat() - 1
                 ).toInt()
                 if (productionPointsToAdd <= 0) continue
@@ -563,7 +587,7 @@ object UnitActions {
                 actionList += UnitAction(UnitActionType.ConductTradeMission,
                     action = {
                         // http://civilization.wikia.com/wiki/Great_Merchant_(Civ5)
-                        var goldEarned = (350 + 50 * unit.civInfo.getEraNumber()) * unit.civInfo.gameInfo.gameParameters.gameSpeed.modifier
+                        var goldEarned = (350 + 50 * unit.civInfo.getEraNumber()) * unit.civInfo.gameInfo.speed.goldCostModifier
                         for (goldUnique in unit.civInfo.getMatchingUniques(UniqueType.PercentGoldFromTradeMissions))
                             goldEarned *= goldUnique.params[0].toPercent()
                         unit.civInfo.addGold(goldEarned.toInt())
@@ -619,8 +643,8 @@ object UnitActions {
             if (!unit.abilityUsesLeft.containsKey(action)) continue
             if (unit.abilityUsesLeft[action]!! <= 0) continue
             when (action) {
-                Constants.spreadReligionAbilityCount -> addSpreadReligionActions(unit, actionList, city)
-                Constants.removeHeresyAbilityCount -> addRemoveHeresyActions(unit, actionList, city)
+                Constants.spreadReligion -> addSpreadReligionActions(unit, actionList, city)
+                Constants.removeHeresy -> addRemoveHeresyActions(unit, actionList, city)
             }
         }
     }
@@ -633,15 +657,7 @@ object UnitActions {
     }
 
     fun addSpreadReligionActions(unit: MapUnit, actionList: ArrayList<UnitAction>, city: CityInfo) {
-        if (!unit.civInfo.gameInfo.isReligionEnabled()) return
-        val blockedByInquisitor =
-            city.getCenterTile()
-                .getTilesInDistance(1)
-                .flatMap { it.getUnits() }
-                .any {
-                    it.hasUnique(UniqueType.PreventSpreadingReligion)
-                    && it.religion != unit.religion
-                }
+        if (!unit.civInfo.religionManager.maySpreadReligionAtAll(unit)) return
         actionList += UnitAction(UnitActionType.SpreadReligion,
             title = "Spread [${unit.getReligionDisplayName()!!}]",
             action = {
@@ -653,8 +669,8 @@ object UnitActions {
                 if (unit.hasUnique(UniqueType.RemoveOtherReligions))
                     city.religion.removeAllPressuresExceptFor(unit.religion!!)
                 unit.currentMovement = 0f
-                useActionWithLimitedUses(unit, Constants.spreadReligionAbilityCount)
-            }.takeIf { unit.currentMovement > 0 && !blockedByInquisitor }
+                useActionWithLimitedUses(unit, Constants.spreadReligion)
+            }.takeIf { unit.currentMovement > 0 && unit.civInfo.religionManager.maySpreadReligionNow(unit) }
         )
     }
 
@@ -668,17 +684,25 @@ object UnitActions {
             title = "Remove Heresy",
             action = {
                 city.religion.removeAllPressuresExceptFor(unit.religion!!)
+                if (city.religion.religionThisIsTheHolyCityOf != null) {
+                    val religion = unit.civInfo.gameInfo.religions[city.religion.religionThisIsTheHolyCityOf]!!
+                    if (city.religion.religionThisIsTheHolyCityOf != unit.religion && !city.religion.isBlockedHolyCity) {
+                        religion.getFounder().addNotification("An [${unit.baseUnit.name}] has removed your religion [${religion.getReligionDisplayName()}] from its Holy City [${city.name}]!")
+                        city.religion.isBlockedHolyCity = false
+                    } else if (city.religion.religionThisIsTheHolyCityOf == unit.religion && city.religion.isBlockedHolyCity) {
+                        religion.getFounder().addNotification("An [${unit.baseUnit.name}] has restored [${city.name}] as the Holy City of your religion [${religion.getReligionDisplayName()}]!")
+                        city.religion.isBlockedHolyCity = true
+                    }
+                }
                 unit.currentMovement = 0f
-                useActionWithLimitedUses(unit, Constants.removeHeresyAbilityCount)
+                useActionWithLimitedUses(unit, Constants.removeHeresy)
             }.takeIf { unit.currentMovement > 0f }
         )
     }
 
     fun getImprovementConstructionActions(unit: MapUnit, tile: TileInfo): ArrayList<UnitAction> {
         val finalActions = ArrayList<UnitAction>()
-        var uniquesToCheck = unit.getMatchingUniques(UniqueType.ConstructImprovementConsumingUnit)
-        if (unit.religiousActionsUnitCanDo().all { unit.abilityUsesLeft[it] == unit.maxAbilityUses[it] })
-            uniquesToCheck += unit.getMatchingUniques(UniqueType.CanConstructIfNoOtherActions)
+        val uniquesToCheck = unit.getMatchingUniques(UniqueType.ConstructImprovementConsumingUnit)
         val civResources = unit.civInfo.getCivResourcesByName()
 
         for (unique in uniquesToCheck) {
@@ -804,6 +828,7 @@ object UnitActions {
     }
 
     fun canPillage(unit: MapUnit, tile: TileInfo): Boolean {
+        if (unit.isTransported) return false
         val tileImprovement = tile.getTileImprovement()
         // City ruins, Ancient Ruins, Barbarian Camp, City Center marked in json
         if (tileImprovement == null || tileImprovement.hasUnique(UniqueType.Unpillagable)) return false

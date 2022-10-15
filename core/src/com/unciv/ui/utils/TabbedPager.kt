@@ -1,6 +1,5 @@
 package com.unciv.ui.utils
 
-import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.EventListener
@@ -12,7 +11,6 @@ import com.badlogic.gdx.scenes.scene2d.ui.Cell
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.ScrollPane
 import com.badlogic.gdx.scenes.scene2d.ui.Table
-import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.scenes.scene2d.ui.WidgetGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ActorGestureListener
 import com.badlogic.gdx.utils.Align
@@ -22,10 +20,10 @@ import com.unciv.ui.images.IconTextButton
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popup.Popup
 import com.unciv.ui.utils.UncivTooltip.Companion.addTooltip
-import com.unciv.ui.utils.extensions.keyShortcuts
 import com.unciv.ui.utils.extensions.addSeparator
 import com.unciv.ui.utils.extensions.darken
 import com.unciv.ui.utils.extensions.isEnabled
+import com.unciv.ui.utils.extensions.keyShortcuts
 import com.unciv.ui.utils.extensions.onActivation
 import com.unciv.ui.utils.extensions.packIfNeeded
 import com.unciv.ui.utils.extensions.pad
@@ -220,55 +218,60 @@ open class TabbedPager(
             }
         }
 
+        class SyncedScrollListener(val linkedScrollPane: LinkedScrollPane):InputListener(){
+            val oldScrollListener = linkedScrollPane.listeners.removeIndex(linkedScrollPane.listeners.size-1) as InputListener
+            override fun scrolled(event: InputEvent?, x: Float, y: Float, amountX: Float, amountY: Float): Boolean {
+                val toReturn = oldScrollListener.scrolled(event, x, y, amountX, amountY)
+                linkedScrollPane.sync(false)
+                return toReturn
+            }
+        }
+
         override fun addScrollListener() {
             super.addScrollListener()
-            val oldListener = listeners.removeIndex(listeners.size-1) as InputListener
-            addListener(object : InputListener() {
-                override fun scrolled(event: InputEvent?, x: Float, y: Float, amountX: Float, amountY: Float): Boolean {
-                    val toReturn = oldListener.scrolled(event, x, y, amountX, amountY)
-                    sync(false)
-                    return toReturn
-                }
-            })
+            addListener(SyncedScrollListener(this))
+        }
+
+        class LinkedCaptureListener(val linkedScrollPane: LinkedScrollPane):InputListener(){
+            val oldListener = linkedScrollPane.captureListeners.removeIndex(0) as InputListener
+            override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
+                val toReturn = oldListener.touchDown(event, x, y, pointer, button)
+                linkedScrollPane.sync()
+                return toReturn
+            }
+            override fun touchDragged(event: InputEvent?, x: Float, y: Float, pointer: Int) {
+                oldListener.touchDragged(event, x, y, pointer)
+                linkedScrollPane.sync()
+            }
+            override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
+                oldListener.touchUp(event, x, y, pointer, button)
+                linkedScrollPane.sync()
+            }
+            override fun mouseMoved(event: InputEvent?, x: Float, y: Float): Boolean {
+                // syncing here leads to stutter
+                return oldListener.mouseMoved(event, x, y)
+            }
         }
 
         override fun addCaptureListener() {
             super.addCaptureListener()
-            val oldListener = captureListeners.removeIndex(0) as InputListener
-            addCaptureListener(object : InputListener() {
-                override fun touchDown(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int): Boolean {
-                    val toReturn = oldListener.touchDown(event, x, y, pointer, button)
-                    sync()
-                    return toReturn
-                }
-                override fun touchDragged(event: InputEvent?, x: Float, y: Float, pointer: Int) {
-                    oldListener.touchDragged(event, x, y, pointer)
-                    sync()
-                }
-                override fun touchUp(event: InputEvent?, x: Float, y: Float, pointer: Int, button: Int) {
-                    oldListener.touchUp(event, x, y, pointer, button)
-                    sync()
-                }
-                override fun mouseMoved(event: InputEvent?, x: Float, y: Float): Boolean {
-                    // syncing here leads to stutter
-                    return oldListener.mouseMoved(event, x, y)
-                }
-            })
+            addCaptureListener(LinkedCaptureListener(this))
+        }
+
+        class LinkedFlickScrollListener(val stdFlickListener: ActorGestureListener, val linkedScrollPane: LinkedScrollPane):ActorGestureListener(){
+            override fun pan(event: InputEvent?, x: Float, y: Float, deltaX: Float, deltaY: Float) {
+                stdFlickListener.pan(event, x, y, deltaX, deltaY)
+                linkedScrollPane.sync()
+            }
+            override fun fling(event: InputEvent?, velocityX: Float, velocityY: Float, button: Int) {
+                stdFlickListener.fling(event, velocityX, velocityY, button)
+                linkedScrollPane.sync()
+            }
         }
 
         override fun getFlickScrollListener(): ActorGestureListener {
             val stdFlickListener = super.getFlickScrollListener()
-            val newFlickListener = object: ActorGestureListener() {
-                override fun pan(event: InputEvent?, x: Float, y: Float, deltaX: Float, deltaY: Float) {
-                    stdFlickListener.pan(event, x, y, deltaX, deltaY)
-                    sync()
-                }
-                override fun fling(event: InputEvent?, velocityX: Float, velocityY: Float, button: Int) {
-                    stdFlickListener.fling(event, velocityX, velocityY, button)
-                    sync()
-                }
-            }
-            return newFlickListener
+            return LinkedFlickScrollListener(stdFlickListener, this)
         }
 
         override fun act(delta: Float) {
@@ -328,7 +331,7 @@ open class TabbedPager(
     }
     override fun getMinWidth() = dimW.min
     override fun getMaxWidth() = dimW.max
-    override fun getMinHeight() = dimH.min + headerHeight
+    override fun getMinHeight() = headerHeight
     override fun getMaxHeight() = dimH.max + headerHeight
 
     //endregion
@@ -574,7 +577,7 @@ open class TabbedPager(
      */
     fun askForPassword(secretHashCode: Int = 0) {
         class PassPopup(screen: BaseScreen, unlockAction: ()->Unit, lockAction: ()->Unit) : Popup(screen) {
-            val passEntry = TextField("", BaseScreen.skin)
+            val passEntry = UncivTextField.create("Password")
             init {
                 passEntry.isPasswordMode = true
                 add(passEntry).row()

@@ -6,6 +6,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.unciv.ui.images.IconCircleGroup
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.utils.BaseScreen
+import com.unciv.ui.utils.UncivTextField
 import com.unciv.ui.utils.extensions.surroundWithCircle
 import com.unciv.ui.utils.extensions.toLabel
 
@@ -39,7 +40,7 @@ class AskTextPopup(
         wrapper.add(label.toLabel())
         add(wrapper).colspan(2).row()
 
-        val nameField = TextField(defaultText, skin)
+        val nameField = UncivTextField.create(label, defaultText)
         nameField.textFieldFilter = TextField.TextFieldFilter { _, char -> char !in illegalChars}
         nameField.maxLength = maxLength
 
@@ -48,16 +49,19 @@ class AskTextPopup(
         val errorLabel = errorText.toLabel()
         errorLabel.color = Color.RED
 
+        addCloseButton()
         addOKButton(
             validate = {
-                val errorFound = nameField.text == "" || !validate(nameField.text)
-                if (errorFound) add(errorLabel).colspan(2).center()
+                val errorFound = !validate(nameField.text)
+                if (errorFound) {
+                    row()
+                    add(errorLabel).colspan(2).center()
+                }
                 !errorFound
             }
         ) {
             actionOnOk(nameField.text)
         }
-        addCloseButton()
         equalizeLastTwoButtonWidths()
         keyboardFocus = nameField
     }

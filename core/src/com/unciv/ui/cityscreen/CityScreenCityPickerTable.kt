@@ -57,9 +57,10 @@ class CityScreenCityPickerTable(private val cityScreen: CityScreen) : Table() {
                 cityScreen,
                 label = "Please enter a new name for your city",
                 defaultText = city.name,
+                validate = { it != "" },
                 actionOnOk = { text ->
                     city.name = text
-                    cityScreen.game.setScreen(CityScreen(city))
+                    cityScreen.game.replaceCurrentScreen(CityScreen(city))
                 }
             ).open()
         }

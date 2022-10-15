@@ -7,6 +7,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.utils.Array
 import com.unciv.UncivGame
 import com.unciv.models.metadata.GameSettings
+import com.unciv.models.skins.SkinCache
 import com.unciv.models.tilesets.TileSetCache
 import com.unciv.models.translations.tr
 import com.unciv.ui.images.ImageGetter
@@ -16,14 +17,12 @@ import com.unciv.ui.utils.WrappableLabel
 import com.unciv.ui.utils.extensions.brighten
 import com.unciv.ui.utils.extensions.onChange
 import com.unciv.ui.utils.extensions.toLabel
-import com.unciv.ui.worldscreen.WorldScreen
 
 private val resolutionArray = com.badlogic.gdx.utils.Array(arrayOf("750x500", "900x600", "1050x700", "1200x800", "1500x1000"))
 
 fun displayTab(
     optionsPopup: OptionsPopup,
-    onResolutionChange: () -> Unit,
-    onTilesetChange: () -> Unit
+    onChange: () -> Unit,
 ) = Table(BaseScreen.skin).apply {
     pad(10f)
     defaults().pad(2.5f)
@@ -33,9 +32,7 @@ fun displayTab(
     optionsPopup.addCheckbox(this, "Show unit movement arrows", settings.showUnitMovements, true) { settings.showUnitMovements = it }
     optionsPopup.addCheckbox(this, "Show tile yields", settings.showTileYields, true) { settings.showTileYields = it } // JN
     optionsPopup.addCheckbox(this, "Show worked tiles", settings.showWorkedTiles, true) { settings.showWorkedTiles = it }
-    optionsPopup.addCheckbox(this, "Show resources and improvements", settings.showResourcesAndImprovements, true) {
-        settings.showResourcesAndImprovements = it
-    }
+    optionsPopup.addCheckbox(this, "Show resources and improvements", settings.showResourcesAndImprovements, true) { settings.showResourcesAndImprovements = it }
     optionsPopup.addCheckbox(this, "Show tutorials", settings.showTutorials, true) { settings.showTutorials = it }
     optionsPopup.addCheckbox(this, "Show pixel units", settings.showPixelUnits, true) { settings.showPixelUnits = it }
     optionsPopup.addCheckbox(this, "Show pixel improvements", settings.showPixelImprovements, true) { settings.showPixelImprovements = it }
@@ -44,9 +41,13 @@ fun displayTab(
 
     addMinimapSizeSlider(this, settings, optionsPopup.selectBoxMinWidth)
 
-    addResolutionSelectBox(this, settings, optionsPopup.selectBoxMinWidth, onResolutionChange)
+    addUnitIconAlphaSlider(this, settings, optionsPopup.selectBoxMinWidth)
 
-    addTileSetSelectBox(this, settings, optionsPopup.selectBoxMinWidth, onTilesetChange)
+    addResolutionSelectBox(this, settings, optionsPopup.selectBoxMinWidth, onChange)
+
+    addTileSetSelectBox(this, settings, optionsPopup.selectBoxMinWidth, onChange)
+
+    addSkinSelectBox(this, settings, optionsPopup.selectBoxMinWidth, onChange)
 
     optionsPopup.addCheckbox(this, "Continuous rendering", settings.continuousRendering) {
         settings.continuousRendering = it
@@ -64,7 +65,7 @@ fun displayTab(
 }
 
 private fun addMinimapSizeSlider(table: Table, settings: GameSettings, selectBoxMinWidth: Float) {
-    table.add("Show minimap".toLabel()).left().fillX()
+    table.add("Minimap size".toLabel()).left().fillX()
 
     // The meaning of the values needs a formula to be synchronized between here and
     // [Minimap.init]. It goes off-10%-11%..29%-30%-35%-40%-45%-50% - and the percentages
@@ -94,6 +95,25 @@ private fun addMinimapSizeSlider(table: Table, settings: GameSettings, selectBox
             worldScreen.shouldUpdate = true
     }
     table.add(minimapSlider).minWidth(selectBoxMinWidth).pad(10f).row()
+}
+
+private fun addUnitIconAlphaSlider(table: Table, settings: GameSettings, selectBoxMinWidth: Float) {
+    table.add("Unit icon opacity".toLabel()).left().fillX()
+
+    val getTipText: (Float) -> String = {"%.0f".format(it*100) + "%"}
+
+    val unitIconAlphaSlider = UncivSlider(
+        0f, 1f, 0.1f, initial = settings.unitIconOpacity, getTipText = getTipText
+    ) {
+        settings.unitIconOpacity = it
+        settings.save()
+
+        val worldScreen = UncivGame.Current.getWorldScreenIfActive()
+        if (worldScreen != null)
+            worldScreen.shouldUpdate = true
+
+    }
+    table.add(unitIconAlphaSlider).minWidth(selectBoxMinWidth).pad(10f).row()
 }
 
 private fun addResolutionSelectBox(table: Table, settings: GameSettings, selectBoxMinWidth: Float, onResolutionChange: () -> Unit) {
@@ -126,5 +146,24 @@ private fun addTileSetSelectBox(table: Table, settings: GameSettings, selectBoxM
         // ImageGetter ruleset should be correct no matter what screen we're on
         TileSetCache.assembleTileSetConfigs(ImageGetter.ruleset.mods)
         onTilesetChange()
+    }
+}
+
+private fun addSkinSelectBox(table: Table, settings: GameSettings, selectBoxMinWidth: Float, onSkinChange: () -> Unit) {
+    table.add("UI Skin".toLabel()).left().fillX()
+
+    val skinSelectBox = SelectBox<String>(table.skin)
+    val skinArray = Array<String>()
+    val skins = ImageGetter.getAvailableSkins()
+    for (skin in skins) skinArray.add(skin)
+    skinSelectBox.items = skinArray
+    skinSelectBox.selected = settings.skin
+    table.add(skinSelectBox).minWidth(selectBoxMinWidth).pad(10f).row()
+
+    skinSelectBox.onChange {
+        settings.skin = skinSelectBox.selected
+        // ImageGetter ruleset should be correct no matter what screen we're on
+        SkinCache.assembleSkinConfigs(ImageGetter.ruleset.mods)
+        onSkinChange()
     }
 }

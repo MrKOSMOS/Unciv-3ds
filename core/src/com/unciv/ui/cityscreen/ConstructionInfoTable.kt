@@ -7,6 +7,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.unciv.UncivGame
 import com.unciv.logic.city.IConstruction
 import com.unciv.logic.city.PerpetualConstruction
+import com.unciv.logic.city.PerpetualStatConversion
 import com.unciv.models.ruleset.Building
 import com.unciv.models.ruleset.IRulesetObject
 import com.unciv.models.ruleset.unit.BaseUnit
@@ -63,7 +64,7 @@ class ConstructionInfoTable(val cityScreen: CityScreen): Table() {
             val description = when (construction) {
                 is BaseUnit -> construction.getDescription(city)
                 is Building -> construction.getDescription(city, true)
-                is PerpetualConstruction -> construction.description.replace("[rate]", "[${construction.getConversionRate(city)}]").tr()
+                is PerpetualStatConversion -> construction.description.replace("[rate]", "[${construction.getConversionRate(city)}]").tr()
                 else -> ""  // Should never happen
             }
 
@@ -75,7 +76,7 @@ class ConstructionInfoTable(val cityScreen: CityScreen): Table() {
             if (link.isEmpty()) return
             touchable = Touchable.enabled
             onClick {
-                UncivGame.Current.setScreen(CivilopediaScreen(city.getRuleset(), cityScreen, link = link))
+                UncivGame.Current.pushScreen(CivilopediaScreen(city.getRuleset(), link = link))
             }
         }
     }

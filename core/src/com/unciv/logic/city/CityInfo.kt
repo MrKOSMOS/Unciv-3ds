@@ -1,6 +1,7 @@
 package com.unciv.logic.city
 
 import com.badlogic.gdx.math.Vector2
+import com.unciv.logic.IsPartOfGameInfoSerialization
 import com.unciv.logic.battle.CityCombatant
 import com.unciv.logic.civilization.CivilizationInfo
 import com.unciv.logic.civilization.NotificationIcon
@@ -36,7 +37,7 @@ enum class CityFlags {
 }
 
 // if tableEnabled == true, then Stat != null
-enum class CityFocus(val label: String, val tableEnabled: Boolean, val stat: Stat? = null) {
+enum class CityFocus(val label: String, val tableEnabled: Boolean, val stat: Stat? = null) : IsPartOfGameInfoSerialization {
     NoFocus("Default Focus", true, null) {
         override fun getStatMultiplier(stat: Stat) = 1f  // actually redundant, but that's two steps to see
     },
@@ -78,7 +79,7 @@ enum class CityFocus(val label: String, val tableEnabled: Boolean, val stat: Sta
 }
 
 
-class CityInfo {
+class CityInfo : IsPartOfGameInfoSerialization {
     @Suppress("JoinDeclarationAndAssignment")
     @Transient
     lateinit var civInfo: CivilizationInfo
@@ -109,10 +110,11 @@ class CityInfo {
     var health = 200
 
 
-    var religion = CityInfoReligionManager()
     var population = PopulationManager()
     var cityConstructions = CityConstructions()
     var expansion = CityExpansionManager()
+    var religion = CityReligionManager()
+    var espionage = CityEspionageManager()
 
     @Transient  // CityStats has no serializable fields
     var cityStats = CityStats(this)
@@ -162,7 +164,11 @@ class CityInfo {
         ) ?: "City Without A Name"
 
         isOriginalCapital = civInfo.citiesCreated == 0
-        if (isOriginalCapital) civInfo.hasEverOwnedOriginalCapital = true
+        if (isOriginalCapital) {
+            civInfo.hasEverOwnedOriginalCapital = true
+            // if you have some culture before the 1st city is found, you may want to adopt the 1st policy
+            civInfo.policies.shouldOpenPolicyPicker = true
+        }
         civInfo.citiesCreated++
 
         civInfo.cities = civInfo.cities.toMutableList().apply { add(this@CityInfo) }
@@ -365,7 +371,7 @@ class CityInfo {
     fun getWorkableTiles() = tilesInRange.asSequence().filter { it.getOwner() == civInfo }
     fun isWorked(tileInfo: TileInfo) = workedTiles.contains(tileInfo.position)
 
-    fun isCapital(): Boolean = cityConstructions.builtBuildings.contains(capitalCityIndicator())
+    fun isCapital(): Boolean = cityConstructions.getBuiltBuildings().any { it.hasUnique(UniqueType.IndicatesCapital) }
     fun isCoastal(): Boolean = centerTileInfo.isCoastalTile()
     fun capitalCityIndicator(): String {
         val indicatorBuildings = getRuleset().buildings.values
@@ -505,9 +511,7 @@ class CityInfo {
 
     fun getGreatPersonPercentageBonus(): Int{
         var allGppPercentageBonus = 0
-        for (unique in getMatchingUniques(UniqueType.GreatPersonPointPercentage)
-            + getMatchingUniques(UniqueType.GreatPersonPointPercentageDeprecated)
-        ) {
+        for (unique in getMatchingUniques(UniqueType.GreatPersonPointPercentage)) {
             if (!matchesFilter(unique.params[1])) continue
             allGppPercentageBonus += unique.params[0].toInt()
         }
@@ -585,7 +589,8 @@ class CityInfo {
 
     override fun toString() = name // for debug
 
-    fun isHolyCity(): Boolean = religion.religionThisIsTheHolyCityOf != null
+    fun isHolyCity(): Boolean = religion.religionThisIsTheHolyCityOf != null && !religion.isBlockedHolyCity
+    fun isHolyCityOf(religionName: String?) = isHolyCity() && religion.religionThisIsTheHolyCityOf == religionName
 
     fun canBeDestroyed(justCaptured: Boolean = false): Boolean {
         return !isOriginalCapital && !isHolyCity() && (!isCapital() || justCaptured)
@@ -624,6 +629,7 @@ class CityInfo {
         cityConstructions.cityInfo = this
         cityConstructions.setTransients()
         religion.setTransients(this)
+        espionage.setTransients(this)
     }
 
     fun startTurn() {
@@ -920,7 +926,7 @@ class CityInfo {
             "in foreign cities" -> viewingCiv != civInfo
             "in annexed cities" -> foundingCiv != civInfo.civName && !isPuppet
             "in puppeted cities" -> isPuppet
-            "in holy cities" -> religion.religionThisIsTheHolyCityOf != null
+            "in holy cities" -> isHolyCity()
             "in City-State cities" -> civInfo.isCityState()
             // This is only used in communication to the user indicating that only in cities with this
             // religion a unique is active. However, since religion uniques only come from the city itself,

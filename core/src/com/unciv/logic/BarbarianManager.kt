@@ -6,7 +6,6 @@ import com.unciv.json.HashMapVector2
 import com.unciv.logic.civilization.NotificationIcon
 import com.unciv.logic.map.TileInfo
 import com.unciv.logic.map.TileMap
-import com.unciv.models.metadata.GameSpeed
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.utils.extensions.randomWeighted
 import java.util.*
@@ -14,7 +13,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 
-class BarbarianManager {
+class BarbarianManager : IsPartOfGameInfoSerialization {
     val camps = HashMapVector2<Encampment>()
 
     @Transient
@@ -166,7 +165,7 @@ class BarbarianManager {
     }
 }
 
-class Encampment() {
+class Encampment() : IsPartOfGameInfoSerialization {
     val position = Vector2()
     var countdown = 0
     var spawnedUnits = -1
@@ -288,12 +287,6 @@ class Encampment() {
         // Quicker if this camp has already spawned units
         countdown -= min(3, spawnedUnits)
 
-        countdown *= when (gameInfo.gameParameters.gameSpeed) {
-            GameSpeed.Quick -> 67
-            GameSpeed.Standard -> 100
-            GameSpeed.Epic -> 150
-            GameSpeed.Marathon -> 400 // sic!
-        }
-        countdown /= 100
+        countdown = (countdown * gameInfo.speed.barbarianModifier).toInt()
     }
 }

@@ -1,5 +1,6 @@
 package com.unciv.logic.civilization
 
+import com.unciv.logic.IsPartOfGameInfoSerialization
 import com.unciv.logic.city.CityInfo
 import com.unciv.logic.map.MapSize
 import com.unciv.logic.map.RoadStatus
@@ -17,7 +18,7 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
-class TechManager {
+class TechManager : IsPartOfGameInfoSerialization {
     @Transient
     var era: Era = Era()
 
@@ -86,7 +87,7 @@ class TechManager {
         var techCost = getRuleset().technologies[techName]!!.cost.toFloat()
         if (civInfo.isPlayerCivilization())
             techCost *= civInfo.getDifficulty().researchCostModifier
-        techCost *= civInfo.gameInfo.gameParameters.gameSpeed.modifier
+        techCost *= civInfo.gameInfo.speed.scienceCostModifier
         val techsResearchedKnownCivs = civInfo.getKnownCivs()
                 .count { it.isMajorCiv() && it.tech.isResearched(techName) }
         val undefeatedCivs = civInfo.gameInfo.civilizations
@@ -132,13 +133,10 @@ class TechManager {
         val tech = getRuleset().technologies[techName]!!
         if (tech.uniqueObjects.any { it.type == UniqueType.OnlyAvailableWhen && !it.conditionalsApply(civInfo) })
             return false
-        
-        if (tech.getMatchingUniques(UniqueType.IncompatibleWith).any { isResearched(it.params[0]) })
-            return false
-        
+
         if (isResearched(tech.name) && !tech.isContinuallyResearchable())
             return false
-        
+
         return tech.prerequisites.all { isResearched(it) }
     }
 
@@ -167,7 +165,7 @@ class TechManager {
 
     fun getScienceFromGreatScientist(): Int {
         // https://civilization.fandom.com/wiki/Great_Scientist_(Civ5)
-        return (scienceOfLast8Turns.sum() * civInfo.gameInfo.gameParameters.gameSpeed.modifier).toInt()
+        return (scienceOfLast8Turns.sum() * civInfo.gameInfo.speed.scienceCostModifier).toInt()
     }
 
     private fun addCurrentScienceToScienceOfLast8Turns() {
@@ -240,10 +238,7 @@ class TechManager {
     }
 
     fun addTechnology(techName: String) {
-        techsInProgress.remove(techName)
-
-        val previousEra = civInfo.getEra()
-        techsResearched.add(techName)
+        val isNewTech = techsResearched.add(techName)
 
         // this is to avoid concurrent modification problems
         val newTech = getRuleset().technologies[techName]!!
@@ -262,20 +257,8 @@ class TechManager {
         }
 
         civInfo.addNotification("Research of [$techName] has completed!", TechAction(techName), NotificationIcon.Science, techName)
-        civInfo.popupAlerts.add(PopupAlert(AlertType.TechResearched, techName))
-
-        val currentEra = civInfo.getEra()
-        if (previousEra != currentEra) {
-            civInfo.addNotification("You have entered the [$currentEra]!", NotificationIcon.Science)
-            if (civInfo.isMajorCiv()) {
-                for (knownCiv in civInfo.getKnownCivs()) {
-                    knownCiv.addNotification("[${civInfo.civName}] has entered the [$currentEra]!", civInfo.civName, NotificationIcon.Science)
-                }
-            }
-            for (it in getRuleset().policyBranches.values.filter { it.era == currentEra.name && civInfo.policies.isAdoptable(it) }) {
-                civInfo.addNotification("[" + it.name + "] policy branch unlocked!", NotificationIcon.Culture)
-            }
-        }
+        if (isNewTech)
+            civInfo.popupAlerts.add(PopupAlert(AlertType.TechResearched, techName))
 
         if (civInfo.playerType == PlayerType.Human) {
             for (revealedResource in getRuleset().tileResources.values.filter { techName == it.revealedBy }) {
@@ -336,7 +319,27 @@ class TechManager {
             civInfo.addNotification("You have unlocked [The Long Count]!", MayaLongCountAction(), MayaCalendar.notificationIcon)
         }
 
+        val previousEra = civInfo.getEra()
         updateEra()
+        val currentEra = civInfo.getEra()
+        if (previousEra != currentEra) {
+            civInfo.addNotification("You have entered the [$currentEra]!", NotificationIcon.Science)
+            if (civInfo.isMajorCiv()) {
+                for (knownCiv in civInfo.getKnownCivs()) {
+                    knownCiv.addNotification("[${civInfo.civName}] has entered the [$currentEra]!", civInfo.civName, NotificationIcon.Science)
+                }
+            }
+            for (policyBranch in getRuleset().policyBranches.values.filter { it.era == currentEra.name && civInfo.policies.isAdoptable(it) }) {
+                civInfo.addNotification("[" + policyBranch.name + "] policy branch unlocked!", NotificationIcon.Culture)
+            }
+            
+            val erasPassed = getRuleset().eras.values
+                .filter { it.eraNumber > previousEra.eraNumber && it.eraNumber <= currentEra.eraNumber }
+                .sortedBy { it.eraNumber }
+            for (era in erasPassed)
+                for (unique in era.uniqueObjects)
+                    UniqueTriggerActivation.triggerCivwideUnique(unique, civInfo)
+        }
     }
 
     fun updateEra() {
@@ -380,15 +383,11 @@ class TechManager {
     }
 
     private fun updateTransientBooleans() {
-        val wayfinding = civInfo.hasUnique(UniqueType.EmbarkAndEnterOcean)
-        unitsCanEmbark = wayfinding ||
-                civInfo.hasUnique(UniqueType.LandUnitEmbarkation)
+        unitsCanEmbark = civInfo.hasUnique(UniqueType.LandUnitEmbarkation)
         val enterOceanUniques = civInfo.getMatchingUniques(UniqueType.UnitsMayEnterOcean)
         allUnitsCanEnterOcean = enterOceanUniques.any { it.params[0] == "All" }
-        embarkedUnitsCanEnterOcean = wayfinding ||
-                allUnitsCanEnterOcean ||
-                enterOceanUniques.any { it.params[0] == "Embarked" } ||
-                civInfo.hasUnique(UniqueType.EmbarkedUnitsMayEnterOcean)
+        embarkedUnitsCanEnterOcean = allUnitsCanEnterOcean ||
+                enterOceanUniques.any { it.params[0] == "Embarked" }
         specificUnitsCanEnterOcean = enterOceanUniques.any { it.params[0] != "All" && it.params[0] != "Embarked" }
 
         movementSpeedOnRoads = if (civInfo.hasUnique(UniqueType.RoadMovementSpeed))

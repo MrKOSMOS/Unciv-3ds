@@ -5,7 +5,6 @@ import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.g2d.Batch
-import com.badlogic.gdx.math.Interpolation
 import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.Action
 import com.badlogic.gdx.scenes.scene2d.Actor
@@ -13,14 +12,13 @@ import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.InputEvent
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.actions.Actions
-import com.badlogic.gdx.scenes.scene2d.actions.FloatAction
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
 import com.badlogic.gdx.utils.Align
 import com.unciv.Constants
 import com.unciv.UncivGame
-import com.unciv.logic.automation.BattleHelper
-import com.unciv.logic.automation.UnitAutomation
+import com.unciv.logic.automation.unit.BattleHelper
+import com.unciv.logic.automation.unit.UnitAutomation
 import com.unciv.logic.battle.Battle
 import com.unciv.logic.battle.MapUnitCombatant
 import com.unciv.logic.city.CityInfo
@@ -32,6 +30,7 @@ import com.unciv.models.AttackableTile
 import com.unciv.models.UncivSound
 import com.unciv.models.helpers.MapArrowType
 import com.unciv.models.helpers.MiscArrowTypes
+import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.UncivStage
 import com.unciv.ui.audio.SoundPlayer
 import com.unciv.ui.images.ImageGetter
@@ -39,11 +38,14 @@ import com.unciv.ui.map.TileGroupMap
 import com.unciv.ui.tilegroups.TileGroup
 import com.unciv.ui.tilegroups.TileSetStrings
 import com.unciv.ui.tilegroups.WorldTileGroup
+import com.unciv.ui.utils.KeyCharAndCode
 import com.unciv.ui.utils.UnitGroup
 import com.unciv.ui.utils.ZoomableScrollPane
 import com.unciv.ui.utils.extensions.center
 import com.unciv.ui.utils.extensions.colorFromRGB
 import com.unciv.ui.utils.extensions.darken
+import com.unciv.ui.utils.extensions.keyShortcuts
+import com.unciv.ui.utils.extensions.onActivation
 import com.unciv.ui.utils.extensions.onClick
 import com.unciv.ui.utils.extensions.surroundWithCircle
 import com.unciv.ui.utils.extensions.toLabel
@@ -189,7 +191,7 @@ class WorldMapHolder(
                             it.movement.canMoveTo(tileInfo) ||
                                     it.movement.isUnknownTileWeShouldAssumeToBePassable(tileInfo) && !it.baseUnit.movesLikeAirUnits()
                         }
-                )) {
+                ) && previousSelectedUnits.any { !it.isPreparingAirSweep()}) {
             if (previousSelectedUnitIsSwapping) {
                 addTileOverlaysWithUnitSwapping(previousSelectedUnits.first(), tileInfo)
             }
@@ -216,7 +218,7 @@ class WorldMapHolder(
     }
 
     private fun onTileRightClicked(unit: MapUnit, tile: TileInfo) {
-        if (UncivGame.Current.gameInfo!!.currentPlayerCiv.isSpectator()) {
+        if (UncivGame.Current.gameInfo!!.getCurrentPlayerCivilization().isSpectator()) {
             return
         }
         removeUnitActionOverlay()
@@ -456,12 +458,13 @@ class WorldMapHolder(
         val unitsThatCanMove = dto.unitToTurnsToDestination.keys.filter { it.currentMovement > 0 }
         if (unitsThatCanMove.isEmpty()) moveHereButton.color.a = 0.5f
         else {
-            moveHereButton.onClick(UncivSound.Silent) {
+            moveHereButton.onActivation(UncivSound.Silent) {
                 UncivGame.Current.settings.addCompletedTutorialTask("Move unit")
                 if (unitsThatCanMove.any { it.baseUnit.movesLikeAirUnits() })
                     UncivGame.Current.settings.addCompletedTutorialTask("Move an air unit")
                 moveUnitToTargetTile(unitsThatCanMove, dto.tileInfo)
             }
+            moveHereButton.keyShortcuts.add(KeyCharAndCode.TAB)
         }
         return moveHereButton
     }
@@ -477,12 +480,13 @@ class WorldMapHolder(
         unitIcon.y = buttonSize - unitIcon.height
         swapWithButton.addActor(unitIcon)
 
-        swapWithButton.onClick(UncivSound.Silent) {
+        swapWithButton.onActivation(UncivSound.Silent) {
             UncivGame.Current.settings.addCompletedTutorialTask("Move unit")
             if (dto.unit.baseUnit.movesLikeAirUnits())
                 UncivGame.Current.settings.addCompletedTutorialTask("Move an air unit")
             swapMoveUnitToTargetTile(dto.unit, dto.tileInfo)
         }
+        swapWithButton.keyShortcuts.add(KeyCharAndCode.TAB)
 
         return swapWithButton
     }
@@ -644,7 +648,7 @@ class WorldMapHolder(
 
         for (tile in tilesInMoveRange) {
             for (tileToColor in tileGroups[tile]!!) {
-                if (isAirUnit)
+                if (isAirUnit && !unit.isPreparingAirSweep()) {
                     if (tile.aerialDistanceTo(unit.getTile()) <= unit.getRange()) {
                         // The tile is within attack range
                         tileToColor.showHighlight(Color.RED, 0.3f)
@@ -652,6 +656,7 @@ class WorldMapHolder(
                         // The tile is within move range
                         tileToColor.showHighlight(Color.BLUE, 0.3f)
                     }
+                }
                 if (unit.movement.canMoveTo(tile) ||
                         unit.movement.isUnknownTileWeShouldAssumeToBePassable(tile) && !unit.baseUnit.movesLikeAirUnits())
                     tileToColor.showHighlight(moveTileOverlayColor,
@@ -723,31 +728,9 @@ class WorldMapHolder(
         if (selectUnit || forceSelectUnit != null)
             worldScreen.bottomUnitTable.tileSelected(selectedTile!!, forceSelectUnit)
 
-        val originalScrollX = scrollX
-        val originalScrollY = scrollY
-
-        val finalScrollX = tileGroup.x + tileGroup.width / 2
-
-        /** The Y axis of [scrollY] is inverted - when at 0 we're at the top, not bottom - so we invert it back. */
-        val finalScrollY = maxY - (tileGroup.y + tileGroup.width / 2)
-
-        if (finalScrollX == originalScrollX && finalScrollY == originalScrollY) return false
-
-        if (immediately) {
-            scrollX = finalScrollX
-            scrollY = finalScrollY
-            updateVisualScroll()
-        } else {
-            val action = object : FloatAction(0f, 1f, 0.4f) {
-                override fun update(percent: Float) {
-                    scrollX = finalScrollX * percent + originalScrollX * (1 - percent)
-                    scrollY = finalScrollY * percent + originalScrollY * (1 - percent)
-                    updateVisualScroll()
-                }
-            }
-            action.interpolation = Interpolation.sine
-            addAction(action)
-        }
+        // The Y axis of [scrollY] is inverted - when at 0 we're at the top, not bottom - so we invert it back.
+        if (!scrollTo(tileGroup.x + tileGroup.width / 2, maxY - (tileGroup.y + tileGroup.width / 2), immediately))
+            return false
 
         removeAction(blinkAction) // so we don't have multiple blinks at once
         blinkAction = Actions.repeat(3, Actions.sequence(
@@ -798,4 +781,8 @@ class WorldMapHolder(
     override fun draw(batch: Batch?, parentAlpha: Float) = super.draw(batch, parentAlpha)
 
     override fun act(delta: Float) = super.act(delta)
+
+    override fun clear() {
+        super.clear()
+    }
 }

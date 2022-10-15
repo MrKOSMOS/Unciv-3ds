@@ -16,6 +16,7 @@ import com.unciv.ui.utils.KeyCharAndCode
 import com.unciv.ui.utils.extensions.surroundWithCircle
 import java.io.File
 
+
 /** Encapsulates the knowledge on how to get an icon for each of the Civilopedia categories */
 object CivilopediaImageGetters {
     private const val policyIconFolder = "PolicyIcons"
@@ -31,12 +32,13 @@ object CivilopediaImageGetters {
                 tileInfo.baseTerrain = terrain.turnsInto ?: Constants.grassland
             }
             TerrainType.TerrainFeature -> {
-                tileInfo.addTerrainFeature(terrain.name)
                 tileInfo.baseTerrain =
                     if (terrain.occursOn.isEmpty() || terrain.occursOn.contains(Constants.grassland))
                         Constants.grassland
                     else
                         terrain.occursOn.lastOrNull()!!
+                tileInfo.setTerrainTransients()
+                tileInfo.addTerrainFeature(terrain.name)
             }
             else ->
                 tileInfo.baseTerrain = terrain.name
@@ -188,6 +190,11 @@ enum class CivilopediaCategories (
         getImage = null,
         KeyCharAndCode('D'),
         "OtherIcons/Tyrannosaurus"
+    ),
+    Speed ("Speeds", false,
+        getImage = null,
+        KeyCharAndCode('S'),
+        "OtherIcons/Timer"
     );
 
     fun getByOffset(offset: Int) = values()[(ordinal + count + offset) % count]

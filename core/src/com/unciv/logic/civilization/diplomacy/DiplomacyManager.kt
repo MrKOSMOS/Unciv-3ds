@@ -2,6 +2,7 @@ package com.unciv.logic.civilization.diplomacy
 
 import com.badlogic.gdx.graphics.Color
 import com.unciv.Constants
+import com.unciv.logic.IsPartOfGameInfoSerialization
 import com.unciv.logic.civilization.AlertType
 import com.unciv.logic.civilization.CityStatePersonality
 import com.unciv.logic.civilization.CityStateType
@@ -91,7 +92,7 @@ enum class DiplomaticModifiers {
     ReturnedCapturedUnits,
 }
 
-class DiplomacyManager() {
+class DiplomacyManager() : IsPartOfGameInfoSerialization {
 
     companion object {
         /** The value city-state influence can't go below */
@@ -215,7 +216,7 @@ class DiplomacyManager() {
         return 0
     }
 
-    @Suppress("unused")  //todo Finish original intent or remove
+    @Suppress("unused")  //todo Finish original intent (usage in uniques) or remove
     fun matchesCityStateRelationshipFilter(filter: String): Boolean {
         val relationshipLevel = relationshipLevel()
         return when (filter) {
@@ -259,7 +260,7 @@ class DiplomacyManager() {
     }
 
     private fun getCityStateInfluenceDegrade(): Float {
-        if (getInfluence() < getCityStateInfluenceRestingPoint())
+        if (getInfluence() <= getCityStateInfluenceRestingPoint())
             return 0f
 
         val decrement = when {
@@ -287,7 +288,7 @@ class DiplomacyManager() {
     }
 
     private fun getCityStateInfluenceRecovery(): Float {
-        if (getInfluence() > getCityStateInfluenceRestingPoint())
+        if (getInfluence() >= getCityStateInfluenceRestingPoint())
             return 0f
 
         val increment = 1f  // sic: personality does not matter here
@@ -579,7 +580,9 @@ class DiplomacyManager() {
                     else civInfo.addNotification("[${offer.name}] to [$otherCivName] has ended", otherCivName, NotificationIcon.Trade)
 
                     civInfo.updateStatsForNextTurn() // if they were bringing us gold per turn
-                    civInfo.updateDetailedCivResources() // if they were giving us resources
+                    if (trade.theirOffers.union(trade.ourOffers) // if resources were involved
+                                .any { it.type == TradeType.Luxury_Resource || it.type == TradeType.Strategic_Resource })
+                        civInfo.updateDetailedCivResources()
                 }
             }
         }
@@ -820,6 +823,7 @@ class DiplomacyManager() {
         otherCivDiplomacy().setModifier(DiplomaticModifiers.DeclarationOfFriendship, 35f)
         setFlag(DiplomacyFlags.DeclarationOfFriendship, 30)
         otherCivDiplomacy().setFlag(DiplomacyFlags.DeclarationOfFriendship, 30)
+
         if (otherCiv().playerType == PlayerType.Human)
             otherCiv().addNotification("[${civInfo.civName}] and [$otherCivName] have signed the Declaration of Friendship!",
                     civInfo.civName, NotificationIcon.Diplomacy, otherCivName)

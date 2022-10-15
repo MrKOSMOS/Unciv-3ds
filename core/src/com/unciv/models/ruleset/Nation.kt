@@ -10,6 +10,7 @@ import com.unciv.models.ruleset.unique.UniqueTarget
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.translations.squareBraceRegex
 import com.unciv.models.translations.tr
+import com.unciv.ui.civilopedia.CivilopediaScreen.Companion.showReligionInCivilopedia
 import com.unciv.ui.civilopedia.FormattedLine
 import com.unciv.ui.utils.Fonts
 import com.unciv.ui.utils.extensions.colorFromRGB
@@ -20,6 +21,8 @@ class Nation : RulesetObject() {
     else "[$leaderName] of [$name]"
 
     val style = ""
+    fun getStyleOrCivName() = style.ifEmpty { name }
+
     var cityStateType: CityStateType? = null
     var preferredVictoryType: String = Constants.neutralVictoryType
     var declaringWar = ""
@@ -44,6 +47,8 @@ class Nation : RulesetObject() {
     /* Properties present in json but not yet implemented:
     var adjective = ArrayList<String>()
      */
+
+    var spyNames = ArrayList<String>()
 
     var favoredReligion: String? = null
 
@@ -138,7 +143,7 @@ class Nation : RulesetObject() {
         textList += FormattedLine("{Type}: {$cityStateType}", header = 4, color = cityStateType!!.color)
 
         val era = if (UncivGame.isCurrentInitialized() && UncivGame.Current.gameInfo != null) {
-            UncivGame.Current.gameInfo!!.currentPlayerCiv.getEra()
+            UncivGame.Current.gameInfo!!.getCurrentPlayerCivilization().getEra()
         } else {
             ruleset.eras.values.first()
         }
@@ -182,11 +187,12 @@ class Nation : RulesetObject() {
     }
 
     private fun getUniqueBuildingsText(ruleset: Ruleset) = sequence {
+        val religionEnabled = showReligionInCivilopedia(ruleset)
         for (building in ruleset.buildings.values) {
             when {
                 building.uniqueTo != name -> continue
                 building.hasUnique(UniqueType.HiddenFromCivilopedia) -> continue
-                UncivGame.Current.gameInfo != null && !UncivGame.Current.gameInfo!!.isReligionEnabled() && building.hasUnique(UniqueType.HiddenWithoutReligion) -> continue // This seems consistent with existing behaviour of CivilopediaScreen's init.<locals>.shouldBeDisplayed(), and Technology().getEnabledUnits(). Otherwise there are broken links in the Civilopedia (E.G. to "Pyramid" and "Shrine", from "The Maya").
+                !religionEnabled && building.hasUnique(UniqueType.HiddenWithoutReligion) -> continue
             }
             yield(FormattedLine("{${building.name}} -", link=building.makeLink()))
             if (building.replaces != null && ruleset.buildings.containsKey(building.replaces!!)) {
@@ -271,7 +277,7 @@ class Nation : RulesetObject() {
 
     private fun getUniqueImprovementsText(ruleset: Ruleset) = sequence {
         for (improvement in ruleset.tileImprovements.values) {
-            if (improvement.uniqueTo != name) continue
+            if (improvement.uniqueTo != name || improvement.hasUnique(UniqueType.HiddenFromCivilopedia)) continue
 
             yield(FormattedLine(improvement.name, link = "Improvement/${improvement.name}"))
             yield(FormattedLine(improvement.cloneStats().toString(), indent = 1))   // = (improvement as Stats).toString minus import plus copy overhead

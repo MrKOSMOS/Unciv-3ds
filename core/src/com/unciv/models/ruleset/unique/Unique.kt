@@ -1,6 +1,7 @@
 package com.unciv.models.ruleset.unique
 
 import com.unciv.Constants
+import com.unciv.logic.IsPartOfGameInfoSerialization
 import com.unciv.logic.battle.CombatAction
 import com.unciv.logic.battle.MapUnitCombatant
 import com.unciv.logic.city.CityInfo
@@ -145,6 +146,7 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
             UniqueType.ConditionalWar -> state.civInfo?.isAtWar() == true
             UniqueType.ConditionalNotWar -> state.civInfo?.isAtWar() == false
             UniqueType.ConditionalWithResource -> state.civInfo?.hasResource(condition.params[0]) == true
+            UniqueType.ConditionalWithoutResource -> state.civInfo?.hasResource(condition.params[0]) == false
             UniqueType.ConditionalHappy ->
                 state.civInfo != null && state.civInfo.statsForNextTurn.happiness >= 0
             UniqueType.ConditionalBetweenHappiness ->
@@ -155,6 +157,8 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
                 state.civInfo != null && state.civInfo.happinessForNextTurn < condition.params[0].toInt()
             UniqueType.ConditionalGoldenAge ->
                 state.civInfo != null && state.civInfo.goldenAges.isGoldenAge()
+            UniqueType.ConditionalWLTKD ->
+                state.cityInfo != null && state.cityInfo.isWeLoveTheKingDayActive()
             UniqueType.ConditionalBeforeEra ->
                 state.civInfo != null && state.civInfo.getEraNumber() < ruleset().eras[condition.params[0]]!!.eraNumber
             UniqueType.ConditionalStartingFromEra ->
@@ -178,10 +182,6 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
                 state.cityInfo != null && !state.cityInfo.cityConstructions.containsBuildingOrEquivalent(condition.params[0])
             UniqueType.ConditionalPopulationFilter ->
                 state.cityInfo != null && state.cityInfo.population.getPopulationFilterAmount(condition.params[1]) >= condition.params[0].toInt()
-            UniqueType.ConditionalSpecialistCount ->
-                state.cityInfo != null && state.cityInfo.population.getNumberOfSpecialists() >= condition.params[0].toInt()
-            UniqueType.ConditionalFollowerCount ->
-                state.cityInfo != null && state.cityInfo.religion.getFollowersOfMajorityReligion() >= condition.params[0].toInt()
             UniqueType.ConditionalWhenGarrisoned ->
                 state.cityInfo != null && state.cityInfo.getCenterTile().militaryUnit != null && state.cityInfo.getCenterTile().militaryUnit!!.canGarrison()
 
@@ -197,6 +197,9 @@ class Unique(val text: String, val sourceObjectType: UniqueTarget? = null, val s
                 state.ourCombatant != null && state.ourCombatant.getHealth() > condition.params[0].toInt()
             UniqueType.ConditionalBelowHP ->
                 state.ourCombatant != null && state.ourCombatant.getHealth() < condition.params[0].toInt()
+            UniqueType.ConditionalHasNotUsedOtherActions ->
+                state.unit != null &&
+                state.unit.run { religiousActionsUnitCanDo().all { abilityUsesLeft[it] == maxAbilityUses[it] } }
 
             UniqueType.ConditionalInTiles ->
                 relevantTile?.matchesFilter(condition.params[0], state.civInfo) == true
@@ -309,17 +312,22 @@ class UniqueMap: HashMap<String, ArrayList<Unique>>() {
 }
 
 
-class TemporaryUnique() {
+class TemporaryUnique() : IsPartOfGameInfoSerialization {
 
     constructor(uniqueObject: Unique, turns: Int) : this() {
         unique = uniqueObject.text
+        sourceObjectType = uniqueObject.sourceObjectType
+        sourceObjectName = uniqueObject.sourceObjectName
         turnsLeft = turns
     }
 
     var unique: String = ""
 
+    var sourceObjectType: UniqueTarget? = null
+    var sourceObjectName: String? = null
+
     @delegate:Transient
-    val uniqueObject: Unique by lazy { Unique(unique) }
+    val uniqueObject: Unique by lazy { Unique(unique, sourceObjectType, sourceObjectName) }
 
     var turnsLeft: Int = 0
 }

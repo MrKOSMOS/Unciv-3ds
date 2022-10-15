@@ -96,7 +96,7 @@ class TranslationTests {
                 for (placeholder in placeholders) {
                     if (!output.contains(placeholder)) {
                         allTranslationsHaveCorrectPlaceholders = false
-                        debug("Placeholder `%s` not found in `%s` for entry `%s`", placeholder, language, translationEntry)
+                        println("Placeholder `$placeholder` not found in `$language` for entry `$translationEntry`")
                     }
                 }
             }
@@ -116,7 +116,7 @@ class TranslationTests {
             val keyFromEntry = translationEntry.replace(squareBraceRegex, "[]")
             if (key != keyFromEntry) {
                 allPlaceholderKeysMatchEntry = false
-                debug("Entry %s found under bad key %s", translationEntry, key)
+                println("Entry $translationEntry found under bad key $key")
                 break
             }
         }
@@ -124,6 +124,28 @@ class TranslationTests {
                 "This test will only pass when all placeholder translations'keys match their entry with shortened placeholders",
                 allPlaceholderKeysMatchEntry
         )
+    }
+
+    @Test
+    fun allTranslationsHaveUniquePlaceholders() {
+        // check that the templates have unique placeholders (the translation entries are checked below)
+        val templateLines = Gdx.files.internal(TranslationFileWriter.templateFileLocation).reader().readLines()
+        var noTwoPlaceholdersAreTheSame = true
+        for (template in templateLines) {
+            if (template.startsWith("#")) continue
+            val placeholders = squareBraceRegex.findAll(template)
+                .map { it.value }.toList()
+
+            for (placeholder in placeholders)
+                if (placeholders.count { it == placeholder } > 1) {
+                    noTwoPlaceholdersAreTheSame = false
+                    println("Template key $template has the parameter $placeholder more than once")
+                    break
+                }
+        }
+        Assert.assertTrue(
+            "This test will only pass when no translation template keys have the same parameter twice",
+            noTwoPlaceholdersAreTheSame)
     }
 
     @Test
@@ -136,7 +158,7 @@ class TranslationTests {
             for (placeholder in placeholders)
                 if (placeholders.count { it == placeholder } > 1) {
                     noTwoPlaceholdersAreTheSame = false
-                    debug("Entry %s has the parameter %s more than once", translationEntry, placeholder)
+                    println("Entry $translationEntry has the parameter $placeholder more than once")
                     break
                 }
         }
@@ -152,7 +174,7 @@ class TranslationTests {
         var failed = false
         for (line in templateLines) {
             if (line.endsWith(" =")) {
-                debug("%s ends without a space at the end", line)
+                println("$line ends without a space at the end")
                 failed = true
             }
         }
@@ -163,7 +185,7 @@ class TranslationTests {
     @Test
     fun allStringsTranslate() {
         // Needed for .tr() to work
-        UncivGame.Current = UncivGame("")
+        UncivGame.Current = UncivGame()
         UncivGame.Current.settings = GameSettings()
 
         for ((key, value) in translations)
@@ -177,7 +199,7 @@ class TranslationTests {
                     translationEntry.entry.tr()
                 } catch (ex: Exception) {
                     allWordsTranslatedCorrectly = false
-                    debug("Crashed when translating %s to %s", translationEntry.entry, language)
+                    println("Crashed when translating ${translationEntry.entry} to $language")
                 }
             }
         }
@@ -198,7 +220,7 @@ class TranslationTests {
                 || translation.count { it == '\"' } != 2
             ) {
                 allTranslationsCheckedOut = false
-                debug("Translation of the word boundary in %s was incorrectly formatted", language)
+                println("Translation of the word boundary in $language was incorrectly formatted")
             }
         }
 
@@ -231,7 +253,7 @@ class TranslationTests {
         superNestedString.getPlaceholderParametersIgnoringLowerLevelBraces()[0]
             .getPlaceholderParametersIgnoringLowerLevelBraces())
 
-        UncivGame.Current = UncivGame("")
+        UncivGame.Current = UncivGame()
         UncivGame.Current.settings = GameSettings()
 
         fun addTranslation(original:String, result:String){

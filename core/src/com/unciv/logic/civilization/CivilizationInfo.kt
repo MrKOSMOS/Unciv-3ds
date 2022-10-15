@@ -5,9 +5,10 @@ import com.unciv.Constants
 import com.unciv.UncivGame
 import com.unciv.json.HashMapVector2
 import com.unciv.logic.GameInfo
+import com.unciv.logic.IsPartOfGameInfoSerialization
 import com.unciv.logic.UncivShowableException
-import com.unciv.logic.automation.NextTurnAutomation
-import com.unciv.logic.automation.WorkerAutomation
+import com.unciv.logic.automation.civilization.NextTurnAutomation
+import com.unciv.logic.automation.unit.WorkerAutomation
 import com.unciv.logic.city.CityInfo
 import com.unciv.logic.civilization.RuinsManager.RuinsManager
 import com.unciv.logic.civilization.diplomacy.DiplomacyFlags
@@ -32,6 +33,7 @@ import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.tile.TileResource
 import com.unciv.models.ruleset.unique.StateForConditionals
 import com.unciv.models.ruleset.unique.TemporaryUnique
+import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.models.ruleset.unit.BaseUnit
 import com.unciv.models.stats.Stat
@@ -42,12 +44,13 @@ import com.unciv.ui.utils.extensions.toPercent
 import com.unciv.ui.utils.extensions.withItem
 import com.unciv.ui.victoryscreen.RankingType
 import java.util.*
+import kotlin.collections.HashMap
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
-enum class Proximity {
+enum class Proximity : IsPartOfGameInfoSerialization {
     None, // ie no cities
     Neighbors,
     Close,
@@ -55,7 +58,7 @@ enum class Proximity {
     Distant
 }
 
-class CivilizationInfo {
+class CivilizationInfo : IsPartOfGameInfoSerialization {
 
     @Transient
     private var workerAutomationCache: WorkerAutomation? = null
@@ -104,7 +107,11 @@ class CivilizationInfo {
 
     /** This is for performance since every movement calculation depends on this, see MapUnit comment */
     @Transient
-    var hasActiveGreatWall = false
+    var hasActiveEnemyMovementPenalty = false
+
+    /** Same as above variable */
+    @Transient
+    var enemyMovementPenaltyUniques: Sequence<Unique>? = null
 
     @Transient
     var statsForNextTurn = Stats()
@@ -154,14 +161,21 @@ class CivilizationInfo {
     var religionManager = ReligionManager()
     var goldenAges = GoldenAgeManager()
     var greatPeople = GreatPersonManager()
+    var espionageManager = EspionageManager()
     var victoryManager = VictoryManager()
     var ruinsManager = RuinsManager()
     var diplomacy = HashMap<String, DiplomacyManager>()
     var proximity = HashMap<String, Proximity>()
-    var notifications = ArrayList<Notification>()
     val popupAlerts = ArrayList<PopupAlert>()
     private var allyCivName: String? = null
     var naturalWonders = ArrayList<String>()
+
+    var notifications = ArrayList<Notification>()
+
+    var notificationsLog = ArrayList<NotificationsLog>()
+    class NotificationsLog(val turn: Int = 0) {
+        var notifications = ArrayList<Notification>()
+    }
 
     /** for trades here, ourOffers is the current civ's offers, and theirOffers is what the requesting civ offers  */
     val tradeRequests = ArrayList<TradeRequest>()
@@ -210,7 +224,7 @@ class CivilizationInfo {
      * @property target Position of the tile targeted by the attack.
      * @see [MapUnit.UnitMovementMemory], [attacksSinceTurnStart]
      */
-    class HistoricalAttackMemory() {
+    class HistoricalAttackMemory() : IsPartOfGameInfoSerialization {
         constructor(attackingUnit: String?, source: Vector2, target: Vector2): this() {
             this.attackingUnit = attackingUnit
             this.source = source
@@ -254,6 +268,7 @@ class CivilizationInfo {
         toReturn.goldenAges = goldenAges.clone()
         toReturn.greatPeople = greatPeople.clone()
         toReturn.ruinsManager = ruinsManager.clone()
+        toReturn.espionageManager = espionageManager.clone()
         toReturn.victoryManager = victoryManager.clone()
         toReturn.allyCivName = allyCivName
         for (diplomacyManager in diplomacy.values.map { it.clone() })
@@ -267,6 +282,7 @@ class CivilizationInfo {
         toReturn.exploredTiles.addAll(gameInfo.tileMap.values.asSequence().map { it.position }.filter { it in exploredTiles })
         toReturn.lastSeenImprovement.putAll(lastSeenImprovement)
         toReturn.notifications.addAll(notifications)
+        toReturn.notificationsLog.addAll(notificationsLog)
         toReturn.citiesCreated = citiesCreated
         toReturn.popupAlerts.addAll(popupAlerts)
         toReturn.tradeRequests.addAll(tradeRequests)
@@ -327,7 +343,7 @@ class CivilizationInfo {
             playerType == PlayerType.Human &&
                     gameInfo.gameParameters.oneCityChallenge)
 
-    fun isCurrentPlayer() = gameInfo.getCurrentPlayerCivilization() == this
+    fun isCurrentPlayer() = gameInfo.currentPlayerCiv == this
     fun isBarbarian() = nation.isBarbarian()
     fun isSpectator() = nation.isSpectator()
     fun isCityState(): Boolean = nation.isCityState()
@@ -475,7 +491,7 @@ class CivilizationInfo {
         // exception will happen), also rearrange existing units so that
         // 'nextPotentiallyDueAt' becomes 0.  This way new units are always last to be due
         // (can be changed as wanted, just have a predictable place).
-        var newList = getCivUnitsStartingAtNextDue().toMutableList()
+        val newList = getCivUnitsStartingAtNextDue().toMutableList()
         newList.add(mapUnit)
         units = newList
         nextPotentiallyDueAt = 0
@@ -484,19 +500,21 @@ class CivilizationInfo {
             // Not relevant when updating TileInfo transients, since some info of the civ itself isn't yet available,
             // and in any case it'll be updated once civ info transients are
             updateStatsForNextTurn() // unit upkeep
-            updateDetailedCivResources()
+            if (mapUnit.baseUnit.getResourceRequirements().isNotEmpty())
+                updateDetailedCivResources()
         }
     }
 
     fun removeUnit(mapUnit: MapUnit) {
         // See comment in addUnit().
-        var newList = getCivUnitsStartingAtNextDue().toMutableList()
+        val newList = getCivUnitsStartingAtNextDue().toMutableList()
         newList.remove(mapUnit)
         units = newList
         nextPotentiallyDueAt = 0
 
         updateStatsForNextTurn() // unit upkeep
-        updateDetailedCivResources()
+        if (mapUnit.baseUnit.getResourceRequirements().isNotEmpty())
+            updateDetailedCivResources()
     }
 
     fun getIdleUnits() = getCivUnits().filter { it.isIdle() }
@@ -661,6 +679,27 @@ class CivilizationInfo {
         return diplomacyManager.hasOpenBorders
     }
 
+    fun getEnemyMovementPenalty(enemyUnit: MapUnit, toMoveTo: TileInfo): Float {
+        if (enemyMovementPenaltyUniques != null && enemyMovementPenaltyUniques!!.any()) {
+            return enemyMovementPenaltyUniques!!.sumOf {
+                when (it.type!!) {
+                    UniqueType.EnemyLandUnitsSpendExtraMovement -> {
+                        if (enemyUnit.matchesFilter(it.params[0]))
+                            it.params[1].toInt()
+                        else 0 // doesn't match
+                    }
+                    UniqueType.EnemyLandUnitsSpendExtraMovementDepreciated -> {
+                        if (toMoveTo.isLand) {
+                            1 // depreciated unique only works on land tiles
+                        } else 0
+                    }
+                    else -> 0
+                }
+            }.toFloat()
+        }
+        return 0f // should not reach this point
+    }
+
     /**
      * Returns a civilization caption suitable for greetings including player type info:
      * Like "Milan" if the nation is a city state, "Caesar of Rome" otherwise, with an added
@@ -773,7 +812,7 @@ class CivilizationInfo {
             .sumOf { city -> city.cityConstructions.builtBuildings
                 .filter { gameInfo.ruleSet.buildings[it]!!.isWonder }.size
             }.toDouble()
-        scoreBreakdown["Techs"] = tech.getNumberOfTechsResearched() * 4.toDouble()
+        scoreBreakdown["Technologies"] = tech.getNumberOfTechsResearched() * 4.toDouble()
         scoreBreakdown["Future Tech"] = tech.repeatingTechsResearched * 10.toDouble()
 
         return scoreBreakdown
@@ -823,9 +862,9 @@ class CivilizationInfo {
             diplomacyManager.updateHasOpenBorders()
         }
 
-        victoryManager.civInfo = this
+        espionageManager.setTransients(this)
 
-        thingsToFocusOnForVictory = getPreferredVictoryTypeObject()?.getThingsToFocus(this) ?: setOf()
+        victoryManager.civInfo = this
 
         for (cityInfo in cities) {
             cityInfo.civInfo = this // must be before the city's setTransients because it depends on the tilemap, that comes from the currentPlayerCivInfo
@@ -857,7 +896,7 @@ class CivilizationInfo {
 
     fun updateSightAndResources() {
         updateViewableTiles()
-        updateHasActiveGreatWall()
+        updateHasActiveEnemyMovementPenalty()
         updateDetailedCivResources()
     }
 
@@ -867,7 +906,7 @@ class CivilizationInfo {
 
     // implementation in a separate class, to not clog up CivInfo
     fun initialSetCitiesConnectedToCapitalTransients() = transients().updateCitiesConnectedToCapital(true)
-    fun updateHasActiveGreatWall() = transients().updateHasActiveGreatWall()
+    fun updateHasActiveEnemyMovementPenalty() = transients().updateHasActiveEnemyMovementPenalty()
     fun updateViewableTiles() = transients().updateViewableTiles()
     fun updateDetailedCivResources() = transients().updateCivResources()
 
@@ -912,8 +951,18 @@ class CivilizationInfo {
     }
 
     fun endTurn() {
-        notifications.clear()
+        val notificationsThisTurn = NotificationsLog(gameInfo.turns)
+        notificationsThisTurn.notifications.addAll(notifications)
 
+        while (notificationsLog.size >= UncivGame.Current.settings.notificationsLogMaxTurns) {
+            notificationsLog.removeFirst()
+        }
+
+        if (notificationsThisTurn.notifications.isNotEmpty())
+            notificationsLog.add(notificationsThisTurn)
+
+        notifications.clear()
+        updateStatsForNextTurn()
         val nextTurnStats = statsForNextTurn
 
         policies.endTurn(nextTurnStats.culture.toInt())
@@ -944,6 +993,8 @@ class CivilizationInfo {
         religionManager.endTurn(nextTurnStats.faith.toInt())
         totalFaithForContests += nextTurnStats.faith.toInt()
 
+        espionageManager.endTurn()
+
         if (isMajorCiv()) greatPeople.addGreatPersonPoints(getGreatPersonPointsForNextTurn()) // City-states don't get great people!
 
         for (city in cities.toList()) { // a city can be removed while iterating (if it's being razed) so we need to iterate over a copy
@@ -960,7 +1011,7 @@ class CivilizationInfo {
         goldenAges.endTurn(getHappiness())
         getCivUnits().forEach { it.endTurn() }  // This is the most expensive part of endTurn
         diplomacy.values.toList().forEach { it.nextTurn() } // we copy the diplomacy values so if it changes in-loop we won't crash
-        updateHasActiveGreatWall()
+        updateHasActiveEnemyMovementPenalty()
 
         cachedMilitaryMight = -1    // Reset so we don't use a value from a previous turn
     }
@@ -1025,7 +1076,7 @@ class CivilizationInfo {
     fun removeFlag(flag: String) = flagsCountdown.remove(flag)
     fun hasFlag(flag: String) = flagsCountdown.contains(flag)
 
-    fun getTurnsBetweenDiplomaticVotes() = (15 * gameInfo.gameParameters.gameSpeed.modifier).toInt() // Dunno the exact calculation, hidden in Lua files
+    fun getTurnsBetweenDiplomaticVotes() = (15 * gameInfo.speed.modifier).toInt() // Dunno the exact calculation, hidden in Lua files
 
     fun getTurnsTillNextDiplomaticVote() = flagsCountdown[CivFlags.TurnsTillNextDiplomaticVote.name]
 
@@ -1115,7 +1166,7 @@ class CivilizationInfo {
     }
 
     private fun getTurnsBeforeRevolt() =
-        ((4 + Random().nextInt(3)) * max(gameInfo.gameParameters.gameSpeed.modifier, 1f)).toInt()
+        ((4 + Random().nextInt(3)) * max(gameInfo.speed.modifier, 1f)).toInt()
 
     /** Modify gold by a given amount making sure it does neither overflow nor underflow.
      * @param delta the amount to add (can be negative)
@@ -1265,7 +1316,7 @@ class CivilizationInfo {
     fun getResearchAgreementCost(): Int {
         // https://forums.civfanatics.com/resources/research-agreements-bnw.25568/
         return (
-            getEra().researchAgreementCost * gameInfo.gameParameters.gameSpeed.modifier
+            getEra().researchAgreementCost * gameInfo.speed.goldCostModifier
         ).toInt()
     }
 
@@ -1358,16 +1409,22 @@ class CivilizationInfo {
     }
 
     fun moveCapitalToNextLargest() {
-        moveCapitalTo(cities
-            .filterNot { it.isCapital() }
-            .maxByOrNull { it.population.population})
+        val availableCities = cities.filterNot { it.isCapital() }
+        if (availableCities.none()) return
+        var newCapital = availableCities.filterNot { it.isPuppet }.maxByOrNull { it.population.population }
+
+        if (newCapital == null) { // No non-puppets, take largest puppet and annex
+            newCapital = availableCities.maxByOrNull { it.population.population }!!
+            newCapital.annexCity()
+        }
+        moveCapitalTo(newCapital)
     }
 
     //////////////////////// City State wrapper functions ////////////////////////
 
     fun receiveGoldGift(donorCiv: CivilizationInfo, giftAmount: Int) =
         cityStateFunctions.receiveGoldGift(donorCiv, giftAmount)
-    fun turnsForGreatPersonFromCityState(): Int = ((37 + Random().nextInt(7)) * gameInfo.gameParameters.gameSpeed.modifier).toInt()
+    fun turnsForGreatPersonFromCityState(): Int = ((37 + Random().nextInt(7)) * gameInfo.speed.modifier).toInt()
 
     fun getProtectorCivs() = cityStateFunctions.getProtectorCivs()
     fun addProtectorCiv(otherCiv: CivilizationInfo) = cityStateFunctions.addProtectorCiv(otherCiv)

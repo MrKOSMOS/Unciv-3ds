@@ -11,6 +11,8 @@ import com.unciv.logic.map.Perlin
 import com.unciv.logic.map.TileInfo
 import com.unciv.logic.map.TileMap
 import com.unciv.models.Counter
+import com.unciv.models.metadata.GameParameters
+import com.unciv.models.metadata.GameSetupInfo
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.tile.Terrain
@@ -18,6 +20,7 @@ import com.unciv.models.ruleset.tile.TerrainType
 import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.mapeditor.MapGeneratorSteps
+import com.unciv.ui.utils.extensions.toNiceString
 import com.unciv.utils.Log
 import com.unciv.utils.debug
 import kotlin.math.abs
@@ -71,7 +74,7 @@ class MapGenerator(val ruleset: Ruleset) {
         getMatchingUniques(UniqueType.TileGenerationConditions)
             .map { unique -> TerrainOccursRange(this, unique) }
 
-    fun generateMap(mapParameters: MapParameters, civilizations: List<CivilizationInfo> = emptyList()): TileMap {
+    fun generateMap(mapParameters: MapParameters, gameParameters: GameParameters = GameParameters(), civilizations: List<CivilizationInfo> = emptyList()): TileMap {
         val mapSize = mapParameters.mapSize
         val mapType = mapParameters.type
 
@@ -85,7 +88,7 @@ class MapGenerator(val ruleset: Ruleset) {
         else
             TileMap(mapSize.radius, ruleset, mapParameters.worldWrap)
 
-        mapParameters.createdWithVersion = UncivGame.Current.version
+        mapParameters.createdWithVersion = UncivGame.VERSION.toNiceString()
         map.mapParameters = mapParameters
 
         if (mapType == MapType.empty) {
@@ -134,19 +137,23 @@ class MapGenerator(val ruleset: Ruleset) {
                 regions.generateRegions(map, civilizations.count { ruleset.nations[it.civName]!!.isMajorCiv() })
             }
             runAndMeasure("assignRegions") {
-                regions.assignRegions(map, civilizations.filter { ruleset.nations[it.civName]!!.isMajorCiv() })
+                regions.assignRegions(map, civilizations.filter { ruleset.nations[it.civName]!!.isMajorCiv() }, gameParameters)
+            }
+            // Natural wonders need to go before most resources since there is a minimum distance
+            runAndMeasure("NaturalWonderGenerator") {
+                NaturalWonderGenerator(ruleset, randomness).spawnNaturalWonders(map)
             }
             runAndMeasure("placeResourcesAndMinorCivs") {
                 regions.placeResourcesAndMinorCivs(map, civilizations.filter { ruleset.nations[it.civName]!!.isCityState() })
             }
         } else {
+            runAndMeasure("NaturalWonderGenerator") {
+                NaturalWonderGenerator(ruleset, randomness).spawnNaturalWonders(map)
+            }
             // Fallback spread resources function - used when generating maps in map editor
             runAndMeasure("spreadResources") {
                 spreadResources(map)
             }
-        }
-        runAndMeasure("NaturalWonderGenerator") {
-            NaturalWonderGenerator(ruleset, randomness).spawnNaturalWonders(map)
         }
         runAndMeasure("spreadAncientRuins") {
             spreadAncientRuins(map)
@@ -218,21 +225,19 @@ class MapGenerator(val ruleset: Ruleset) {
             val maxLakeSize = ruleset.modOptions.constants.maxLakeSize
 
             while (waterTiles.isNotEmpty()) {
-                val initialWaterTile = waterTiles.random(randomness.RNG)
+                val initialWaterTile = waterTiles.removeFirst()
                 tilesInArea += initialWaterTile
                 tilesToCheck += initialWaterTile
-                waterTiles -= initialWaterTile
 
                 // Floodfill to cluster water tiles
                 while (tilesToCheck.isNotEmpty()) {
-                    val tileWeAreChecking = tilesToCheck.random(randomness.RNG)
+                    val tileWeAreChecking = tilesToCheck.removeFirst()
                     for (vector in tileWeAreChecking.neighbors
                         .filter { !tilesInArea.contains(it) and waterTiles.contains(it) }) {
                         tilesInArea += vector
                         tilesToCheck += vector
                         waterTiles -= vector
                     }
-                    tilesToCheck -= tileWeAreChecking
                 }
 
                 if (tilesInArea.size <= maxLakeSize) {
@@ -285,7 +290,9 @@ class MapGenerator(val ruleset: Ruleset) {
     private fun spreadStrategicResources(tileMap: TileMap, mapRadius: Int) {
         val strategicResources = ruleset.tileResources.values.filter { it.resourceType == ResourceType.Strategic }
         // passable land tiles (no mountains, no wonders) without resources yet
-        val candidateTiles = tileMap.values.filter { it.resource == null && !it.isImpassible() }
+        // can't be next to NW
+        val candidateTiles = tileMap.values.filter { it.resource == null && !it.isImpassible()
+                && it.neighbors.none { neighbor -> neighbor.isNaturalWonder() }}
         val totalNumberOfResources = candidateTiles.count { it.isLand } * tileMap.mapParameters.resourceRichness
         val resourcesPerType = (totalNumberOfResources/strategicResources.size).toInt()
         for (resource in strategicResources) {
@@ -311,7 +318,8 @@ class MapGenerator(val ruleset: Ruleset) {
 
         val suitableTiles = tileMap.values
                 .filterNot { it.baseTerrain == Constants.snow && it.isHill() }
-                .filter { it.resource == null && resourcesOfType.any { r -> r.terrainsCanBeFoundOn.contains(it.getLastTerrain().name) } }
+                .filter { it.resource == null && it.neighbors.none { neighbor -> neighbor.isNaturalWonder() }
+                        && resourcesOfType.any { r -> r.terrainsCanBeFoundOn.contains(it.getLastTerrain().name) } }
         val numberOfResources = tileMap.values.count { it.isLand && !it.isImpassible() } *
                 tileMap.mapParameters.resourceRichness
         val locations = randomness.chooseSpreadOutLocations(numberOfResources.toInt(), suitableTiles, mapRadius)

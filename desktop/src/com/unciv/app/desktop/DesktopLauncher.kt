@@ -5,14 +5,19 @@ import club.minnced.discord.rpc.DiscordRPC
 import club.minnced.discord.rpc.DiscordRichPresence
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Application
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3ApplicationConfiguration
+import com.badlogic.gdx.files.FileHandle
 import com.badlogic.gdx.graphics.glutils.HdpiMode
 import com.sun.jna.Native
 import com.unciv.UncivGame
 import com.unciv.UncivGameParameters
-import com.unciv.logic.GameSaver
+import com.unciv.json.json
+import com.unciv.logic.SETTINGS_FILE_NAME
+import com.unciv.logic.UncivFiles
+import com.unciv.models.metadata.WindowState
 import com.unciv.ui.utils.Fonts
 import com.unciv.utils.Log
 import com.unciv.utils.debug
+import java.awt.Toolkit
 import java.util.*
 import kotlin.concurrent.timer
 
@@ -30,7 +35,8 @@ internal object DesktopLauncher {
         // There must be a reason for lwjgl3 being so stingy, which for me meant to stay conservative.
         System.setProperty("org.lwjgl.system.stackSize", "384")
 
-        ImagePacker.packImages()
+        val isRunFromJAR = DesktopLauncher.javaClass.`package`.specificationVersion != null
+        ImagePacker.packImages(isRunFromJAR)
 
         val config = Lwjgl3ApplicationConfiguration()
         config.setWindowIcon("ExtraImages/Icon.png")
@@ -42,22 +48,29 @@ internal object DesktopLauncher {
         // Note that means config.setAudioConfig() would be ignored too, those would need to go into the HardenedGdxAudio constructor.
         config.disableAudio(true)
 
-        val settings = GameSaver.getSettingsForPlatformLaunchers()
-        if (!settings.isFreshlyCreated) {
-            config.setWindowedMode(settings.windowState.width.coerceAtLeast(120), settings.windowState.height.coerceAtLeast(80))
+        val settings = UncivFiles.getSettingsForPlatformLaunchers()
+        if (settings.isFreshlyCreated) {
+            settings.resolution = "1200x800" // By default Desktops should have a higher resolution
+            // LibGDX not yet configured, use regular java class
+            val screensize = Toolkit.getDefaultToolkit().screenSize
+            settings.windowState = WindowState(
+                width = screensize.width,
+                height = screensize.height
+            )
+            FileHandle(SETTINGS_FILE_NAME).writeString(json().toJson(settings), false) // so when we later open the game we get fullscreen
         }
 
-        val versionFromJar = DesktopLauncher.javaClass.`package`.specificationVersion ?: "Desktop"
+        config.setWindowedMode(settings.windowState.width.coerceAtLeast(120), settings.windowState.height.coerceAtLeast(80))
 
-        if (versionFromJar == "Desktop") {
+
+        if (!isRunFromJAR) {
             UniqueDocsWriter().write()
         }
 
         val platformSpecificHelper = PlatformSpecificHelpersDesktop(config)
         val desktopParameters = UncivGameParameters(
-            versionFromJar,
             cancelDiscordEvent = { discordTimer?.cancel() },
-            fontImplementation = NativeFontDesktop(Fonts.ORIGINAL_FONT_SIZE.toInt(), settings.fontFamily),
+            fontImplementation = NativeFontDesktop((Fonts.ORIGINAL_FONT_SIZE * settings.fontSizeMultiplier).toInt(), settings.fontFamily),
             customFileLocationHelper = CustomFileLocationHelperDesktop(),
             crashReportSysInfo = CrashReportSysInfoDesktop(),
             platformSpecificHelper = platformSpecificHelper,

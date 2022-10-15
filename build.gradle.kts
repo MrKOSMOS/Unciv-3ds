@@ -12,23 +12,19 @@ buildscript {
 
     repositories {
         // Chinese mirrors for quicker loading for chinese devs - uncomment if you're chinese
-        // maven{ url = uri("https://maven.aliyun.com/repository/public") }
+        // maven{ url = uri("https://maven.aliyun.com/repository/central") }
         // maven{ url = uri("https://maven.aliyun.com/repository/google") }
         // maven{ url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
         mavenCentral()
         google()  // needed for com.android.tools.build:gradle
         maven { url = uri("https://oss.sonatype.org/content/repositories/snapshots/") }
         gradlePluginPortal()
-        maven { url = uri("https://jitpack.io") } // for the anuken packr
     }
     dependencies {
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:${com.unciv.build.BuildConfig.kotlinVersion}")
         classpath("de.richsource.gradle.plugins:gwt-gradle-plugin:0.6")
         classpath("com.android.tools.build:gradle:7.1.3")
         classpath("com.mobidevelop.robovm:robovm-gradle-plugin:2.3.1")
-
-        // This is for wrapping the .jar file into a standalone executable
-        classpath("com.github.anuken:packr:-SNAPSHOT")
     }
 }
 
@@ -41,8 +37,8 @@ allprojects {
 
     repositories {
         // Chinese mirrors for quicker loading for chinese devs - uncomment if you're chinese
+        // maven{ url = uri("https://maven.aliyun.com/repository/central") }
         // maven{ url = uri("https://maven.aliyun.com/repository/google") }
-        // maven{ url = uri("https://maven.aliyun.com/repository/public") }
         mavenCentral()
         google()
         maven { url = uri("https://oss.sonatype.org/content/repositories/snapshots/") }
@@ -64,7 +60,7 @@ project(":desktop") {
         }
 
         "implementation"("com.github.MinnDevelopment:java-discord-rpc:v2.0.1")
-    
+
         "implementation"("net.java.dev.jna:jna:5.11.0")
         "implementation"("net.java.dev.jna:jna-platform:5.11.0")
     }
@@ -133,9 +129,13 @@ project(":core") {
         dependencies {
             "implementation"(project(":core"))
 
+            "implementation"("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.1")
+
             "implementation"("junit:junit:4.13.1")
             "implementation"("org.mockito:mockito-all:1.10.19")
 
+            "implementation"("com.badlogicgames.gdx:gdx-backend-lwjgl3:${gdxVersion}")
+            "implementation"("com.badlogicgames.gdx:gdx-platform:$gdxVersion:natives-desktop")
             "implementation"("com.badlogicgames.gdx:gdx-backend-headless:$gdxVersion")
             "implementation"("com.badlogicgames.gdx:gdx:$gdxVersion")
 

@@ -1,6 +1,7 @@
 package com.unciv.ui.overviewscreen
 
 import com.badlogic.gdx.utils.Align
+import com.unciv.UncivGame
 import com.unciv.logic.civilization.CivilizationInfo
 import com.unciv.ui.utils.KeyCharAndCode
 import com.unciv.ui.overviewscreen.EmpireOverviewTab.EmpireOverviewTabPersistableData
@@ -14,7 +15,7 @@ private fun Boolean.toState(): EmpireOverviewTabState = if (this) EmpireOverview
 /** This controls which Tabs for the [EmpireOverviewScreen] exist and their order.
  *
  *  To add a Tab, build a new [EmpireOverviewTab] subclass and fill out a new entry here, that's all.
- *  Note the enum value's name is used as Tab caption, so if you ever need a non-alphanumeric caption please redesign to include a property for the caption. 
+ *  Note the enum value's name is used as Tab caption, so if you ever need a non-alphanumeric caption please redesign to include a property for the caption.
  */
 enum class EmpireOverviewCategories(
     val iconName: String,
@@ -39,10 +40,10 @@ enum class EmpireOverviewCategories(
         fun (viewingPlayer: CivilizationInfo, overviewScreen: EmpireOverviewScreen, persistedData: EmpireOverviewTabPersistableData?)
                 = UnitOverviewTab(viewingPlayer, overviewScreen, persistedData),
         fun (viewingPlayer: CivilizationInfo) = viewingPlayer.getCivUnits().none().toState()),
-    Diplomacy("OtherIcons/DiplomacyW", 'D', Align.top,
+    Politics("OtherIcons/Politics", 'P', Align.top,
         fun (viewingPlayer: CivilizationInfo, overviewScreen: EmpireOverviewScreen, persistedData: EmpireOverviewTabPersistableData?)
-                = DiplomacyOverviewTab(viewingPlayer, overviewScreen, persistedData),
-        fun (viewingPlayer: CivilizationInfo) = viewingPlayer.diplomacy.isEmpty().toState()),
+                = GlobalPoliticsOverviewTable(viewingPlayer, overviewScreen, persistedData),
+        fun (_: CivilizationInfo) = EmpireOverviewTabState.Normal),
     Resources("StatIcons/Happiness", 'R', Align.topLeft,
         fun (viewingPlayer: CivilizationInfo, overviewScreen: EmpireOverviewScreen, persistedData: EmpireOverviewTabPersistableData?)
                 = ResourcesOverviewTab(viewingPlayer, overviewScreen, persistedData),
@@ -59,7 +60,12 @@ enum class EmpireOverviewCategories(
         fun (viewingPlayer: CivilizationInfo, overviewScreen: EmpireOverviewScreen, _: EmpireOverviewTabPersistableData?)
                 = WonderOverviewTab(viewingPlayer, overviewScreen),
         fun (viewingPlayer: CivilizationInfo) = (viewingPlayer.naturalWonders.isEmpty() && viewingPlayer.cities.isEmpty()).toState()),
-    ;
+    Notifications("OtherIcons/Notifications", 'N', Align.top,
+        fun (viewingPlayer: CivilizationInfo, overviewScreen: EmpireOverviewScreen, persistedData: EmpireOverviewTabPersistableData?)
+                = NotificationsOverviewTable(worldScreen = UncivGame.Current.worldScreen!!, viewingPlayer, overviewScreen, persistedData),
+        fun (_: CivilizationInfo) = EmpireOverviewTabState.Normal)
+    
+    ; //must be here
 
     constructor(iconName: String, shortcutChar: Char, scrollAlign: Int, factory: FactoryType, stateTester: StateTesterType = { _ -> EmpireOverviewTabState.Normal })
         : this(iconName, KeyCharAndCode(shortcutChar), scrollAlign, factory, stateTester)

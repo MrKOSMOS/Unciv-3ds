@@ -2,24 +2,24 @@ package com.unciv.logic.trade
 
 import com.unciv.Constants
 import com.unciv.UncivGame
-import com.unciv.models.metadata.GameSpeed
+import com.unciv.logic.IsPartOfGameInfoSerialization
+import com.unciv.logic.trade.TradeType.TradeTypeNumberType
+import com.unciv.models.ruleset.Speed
 import com.unciv.models.translations.tr
 import com.unciv.ui.utils.Fonts
-import com.unciv.logic.trade.TradeType.TradeTypeNumberType
 
-data class TradeOffer(val name: String, val type: TradeType, var amount: Int = 1, var duration: Int) {
+data class TradeOffer(val name: String, val type: TradeType, var amount: Int = 1, var duration: Int) : IsPartOfGameInfoSerialization {
 
     constructor(
         name: String,
         type: TradeType,
         amount: Int = 1,
-        gameSpeed: GameSpeed = UncivGame.Current.gameInfo!!.gameParameters.gameSpeed
+        speed: Speed = UncivGame.Current.gameInfo!!.speed
     ) : this(name, type, amount, duration = -1) {
         duration = when {
             type.isImmediate -> -1 // -1 for offers that are immediate (e.g. gold transfer)
-            name == Constants.peaceTreaty -> 10
-            gameSpeed == GameSpeed.Quick -> 25
-            else -> (30 * gameSpeed.modifier).toInt()
+            name == Constants.peaceTreaty -> speed.peaceDealDuration
+            else -> speed.dealDuration
         }
     }
 
@@ -31,6 +31,8 @@ data class TradeOffer(val name: String, val type: TradeType, var amount: Int = 1
                 && offer.type == type
                 && offer.amount == amount
     }
+
+    fun isTradable() = amount > 0
 
     fun getOfferText(untradable: Int = 0): String {
         var offerText = when(type){

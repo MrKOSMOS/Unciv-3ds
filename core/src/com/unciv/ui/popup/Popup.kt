@@ -1,6 +1,7 @@
 package com.unciv.ui.popup
 
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.math.Rectangle
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.Touchable
@@ -9,9 +10,12 @@ import com.badlogic.gdx.scenes.scene2d.ui.Cell
 import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle
 import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.utils.Align
 import com.unciv.Constants
+import com.unciv.logic.event.EventBus
+import com.unciv.ui.UncivStage
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.utils.AutoScrollPane
 import com.unciv.ui.utils.BaseScreen
@@ -29,7 +33,8 @@ import com.unciv.ui.utils.extensions.toTextButton
  */
 @Suppress("MemberVisibilityCanBePrivate")
 open class Popup(
-    val stageToShowOn: Stage
+    val stageToShowOn: Stage,
+    scrollable: Boolean = true
 ): Table(BaseScreen.skin) {
 
     constructor(screen: BaseScreen) : this(screen.stage)
@@ -38,22 +43,22 @@ open class Popup(
     // from the 'screen blocking' part of the popup (which covers the entire screen)
     val innerTable = Table(BaseScreen.skin)
 
+    val showListeners = mutableListOf<() -> Unit>()
     val closeListeners = mutableListOf<() -> Unit>()
 
-    val scrollPane: AutoScrollPane
+    val events = EventBus.EventReceiver()
 
     init {
         // Set actor name for debugging
         name = javaClass.simpleName
-
-        scrollPane = AutoScrollPane(innerTable, BaseScreen.skin)
 
         background = ImageGetter.getBackground(Color.GRAY.cpy().apply { a=.5f })
         innerTable.background = ImageGetter.getBackground(ImageGetter.getBlue().darken(0.5f))
 
         innerTable.pad(20f)
         innerTable.defaults().pad(5f)
-        super.add(scrollPane)
+
+        super.add(if (scrollable) AutoScrollPane(innerTable, BaseScreen.skin) else innerTable)
 
         this.isVisible = false
         touchable = Touchable.enabled // don't allow clicking behind
@@ -69,20 +74,34 @@ open class Popup(
         innerTable.pack()
         pack()
         center(stageToShowOn)
+        events.receive(UncivStage.VisibleAreaChanged::class) {
+            fitContentIntoVisibleArea(it.visibleArea)
+        }
+        fitContentIntoVisibleArea((stageToShowOn as UncivStage).lastKnownVisibleArea)
         if (force || !stageToShowOn.hasOpenPopups()) {
             show()
         }
     }
 
+    private fun fitContentIntoVisibleArea(visibleArea: Rectangle) {
+        padLeft(visibleArea.x)
+        padBottom(visibleArea.y)
+        padRight(stageToShowOn.width - visibleArea.x - visibleArea.width)
+        padTop(stageToShowOn.height - visibleArea.y - visibleArea.height)
+        invalidate()
+    }
+
     /** Subroutine for [open] handles only visibility */
     private fun show() {
         this.isVisible = true
+        for (listener in showListeners) listener()
     }
 
     /**
      * Close this popup and - if any other popups are pending - display the next one.
      */
     open fun close() {
+        events.stopReceiving()
         for (listener in closeListeners) listener()
         remove()
         val nextPopup = stageToShowOn.actors.firstOrNull { it is Popup }
@@ -109,52 +128,38 @@ open class Popup(
     }
 
     /**
-     * Adds an inline [TextButton].
+     * Adds a [TextButton].
      * @param text The button's caption.
      * @param key Associate a key with this button's action.
      * @param action A lambda to be executed when the button is clicked.
      * @return The new [Cell]
      */
-    fun addButtonInRow(text: String, key: KeyCharAndCode? = null, action: () -> Unit): Cell<TextButton> {
-        val button = text.toTextButton()
+    fun addButton(text: String, key: KeyCharAndCode? = null, style: TextButtonStyle? = null, action: () -> Unit): Cell<TextButton> {
+        val button = text.toTextButton(style)
         button.onActivation { action() }
         button.keyShortcuts.add(key)
         return add(button)
     }
-    fun addButtonInRow(text: String, key: Char, action: () -> Unit)
-        = addButtonInRow(text, KeyCharAndCode(key), action)
-    fun addButtonInRow(text: String, key: Int, action: () -> Unit)
-        = addButtonInRow(text, KeyCharAndCode(key), action)
-
-    /**
-     * Adds a [TextButton] and ends the current row.
-     * @param text The button's caption.
-     * @param key Associate a key with this button's action.
-     * @param action A lambda to be executed when the button is clicked.
-     * @return The new [Cell]
-     */
-    fun addButton(text: String, key: KeyCharAndCode? = null, action: () -> Unit)
-        = addButtonInRow(text, key, action).apply { row() }
-    /** @link [addButton] */
-    fun addButton(text: String, key: Char, action: () -> Unit)
-        = addButtonInRow(text, key, action).apply { row() }
-    fun addButton(text: String, key: Int, action: () -> Unit)
-        = addButtonInRow(text, key, action).apply { row() }
+    fun addButton(text: String, key: Char, style: TextButtonStyle? = null, action: () -> Unit)
+        = addButton(text, KeyCharAndCode(key), style, action).apply { row() }
+    fun addButton(text: String, key: Int, style: TextButtonStyle? = null, action: () -> Unit)
+        = addButton(text, KeyCharAndCode(key), style, action).apply { row() }
 
     /**
      * Adds a [TextButton] that closes the popup, with [BACK][KeyCharAndCode.BACK] already mapped.
      * @param text The button's caption, defaults to "Close".
      * @param additionalKey An additional key that should act like a click.
      * @param action A lambda to be executed after closing the popup when the button is clicked.
-     * @return The new [Cell], marked as end of row.
+     * @return The new [Cell]
      */
     fun addCloseButton(
         text: String = Constants.close,
         additionalKey: KeyCharAndCode? = null,
+        style: TextButtonStyle? = null,
         action: (()->Unit)? = null
     ): Cell<TextButton> {
-        val cell = addButton(text, additionalKey) { close(); if(action!=null) action() }
-        cell.getActor().keyShortcuts.add(KeyCharAndCode.BACK)
+        val cell = addButton(text, additionalKey, style) { close(); if(action!=null) action() }
+        cell.actor.keyShortcuts.add(KeyCharAndCode.BACK)
         return cell
     }
 
@@ -165,15 +170,16 @@ open class Popup(
      * @param validate Function that should return true when the popup can be closed and `action` can be run.
      * When this function returns false, nothing happens.
      * @param action A lambda to be executed after closing the popup when the button is clicked.
-     * @return The new [Cell], NOT marked as end of row.
+     * @return The new [Cell]
      */
     fun addOKButton(
         text: String = Constants.OK,
         additionalKey: KeyCharAndCode? = null,
+        style: TextButtonStyle? = null,
         validate: (() -> Boolean) = { true },
         action: (() -> Unit),
     ): Cell<TextButton> {
-        val cell = addButtonInRow(text, additionalKey) {
+        val cell = addButton(text, additionalKey, style) {
             if (validate()) {
                 close()
                 action()
@@ -193,8 +199,8 @@ open class Popup(
         val cell1 = innerTable.cells[n-2]
         val cell2 = innerTable.cells[n-1]
         if (cell1.actor !is Button || cell2.actor !is Button) throw UnsupportedOperationException()
-        cell1.minWidth(cell2.actor.width)
-        cell2.minWidth(cell1.actor.width)
+        cell1.minWidth(cell2.actor.width).uniformX()
+        cell2.minWidth(cell1.actor.width).uniformX()
     }
 
     /**

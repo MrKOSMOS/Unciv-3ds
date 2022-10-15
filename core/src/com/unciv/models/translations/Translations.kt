@@ -8,7 +8,6 @@ import com.unciv.models.stats.Stat
 import com.unciv.models.stats.Stats
 import com.unciv.utils.Log
 import com.unciv.utils.debug
-import java.time.temporal.ChronoUnit
 import java.util.*
 
 /**
@@ -158,11 +157,9 @@ class Translations : LinkedHashMap<String, TranslationEntry>(){
 
         languages.remove("template")
         languages.remove("completionPercentages")
-        languages.remove("Thai") // Until we figure out what to do with it
-        languages.remove("Vietnamese") // Until we figure out what to do with it
+        languages.remove("Thai") // Spacing looks horrible, so disable until we figure out what to do with it
 
-        return languages
-                .filter { Gdx.files.internal("jsons/translations/$it.properties").exists() }
+        return languages.filter { Gdx.files.internal("jsons/translations/$it.properties").exists() }
     }
 
     /** Ensure _all_ languages are loaded, used by [TranslationFileWriter] and `TranslationTests` */
@@ -350,8 +347,15 @@ fun String.tr(): String {
         return fullyTranslatedString
     }
 
+    // curly and square brackets can be nested inside of each other so find the leftmost curly/square
+    // bracket then process that first
+    val indexSquare = this.indexOf('[')
+    val indexCurly = this.indexOf('{')
+    val processSquare = indexSquare >= 0 && (indexCurly < 0 || indexSquare < indexCurly)
+    val processCurly =  indexCurly >= 0 && (indexSquare < 0 || indexCurly < indexSquare)
+
     // There might still be optimization potential here!
-    if (contains('[')) { // Placeholders!
+    if (processSquare) { // Placeholders!
         /**
          * I'm SURE there's an easier way to do this but I can't think of it =\
          * So what's all this then?
@@ -384,26 +388,23 @@ fun String.tr(): String {
 
         // Take the terms in the message, WITHOUT square brackets
         val termsInMessage = this.getPlaceholderParametersIgnoringLowerLevelBraces()
-        // Take the term from the placeholder, INCLUDING the square brackets
-        val termsInTranslationPlaceholder =
-            squareBraceRegex.findAll(originalEntry).map { it.value }.toList()
+        // Take the terms from the placeholder
+        val termsInTranslationPlaceholder = originalEntry.getPlaceholderParametersIgnoringLowerLevelBraces()
         if (termsInMessage.size != termsInTranslationPlaceholder.size)
             throw Exception("Message $this has a different number of terms than the placeholder $translationEntry!")
 
         for (i in termsInMessage.indices) {
             languageSpecificPlaceholder = languageSpecificPlaceholder.replace(
-                termsInTranslationPlaceholder[i],
+                "[${termsInTranslationPlaceholder[i]}]", // re-add square brackets to placeholder terms
                 termsInMessage[i].tr()
             )
         }
         return languageSpecificPlaceholder      // every component is already translated
     }
 
-
-    if (contains('{')) { // Translating partial sentences
+    if (processCurly) { // Translating partial sentences
         return curlyBraceRegex.replace(this) { it.groups[1]!!.value.tr() }
     }
-
 
     if (Stats.isStats(this)) return Stats.parse(this).toString()
 
@@ -484,7 +485,7 @@ fun String.removeConditionals(): String {
     return this
         .replace(pointyBraceRegex, "")
         // So, this is a quick hack, but it works as long as nobody uses word separators different from " " (space) and "" (none),
-        // And no translations start or end with a space.
+        // and no translations start or end with a space.
         // According to https://linguistics.stackexchange.com/questions/6131/is-there-a-long-list-of-languages-whose-writing-systems-dont-use-spaces
         // This is a reasonable but not fully correct assumption to make.
         // By doing it like this, we exclude languages such as Tibetan, Dzongkha (Bhutan), and Ethiopian.

@@ -3,6 +3,8 @@ package com.unciv.ui.utils.extensions
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.Input
 import com.badlogic.gdx.graphics.Color
+import com.badlogic.gdx.math.Rectangle
+import com.badlogic.gdx.math.Vector2
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Group
 import com.badlogic.gdx.scenes.scene2d.InputEvent
@@ -10,12 +12,14 @@ import com.badlogic.gdx.scenes.scene2d.InputListener
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.ui.Button
+import com.badlogic.gdx.scenes.scene2d.ui.Button.ButtonStyle
 import com.badlogic.gdx.scenes.scene2d.ui.Cell
 import com.badlogic.gdx.scenes.scene2d.ui.CheckBox
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.Label
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton.TextButtonStyle
 import com.badlogic.gdx.scenes.scene2d.ui.WidgetGroup
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener
@@ -29,23 +33,34 @@ import com.unciv.ui.images.IconCircleGroup
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.utils.BaseScreen
 import com.unciv.ui.utils.Fonts
-import com.unciv.utils.concurrency.Concurrency
 import com.unciv.ui.utils.KeyCharAndCode
 import com.unciv.ui.utils.KeyShortcut
 import com.unciv.ui.utils.KeyShortcutDispatcher
+import com.unciv.utils.concurrency.Concurrency
 
 /**
  * Collection of extension functions mostly for libGdx widgets
  */
 
+private class RestorableTextButtonStyle(
+    baseStyle: TextButtonStyle,
+    val restoreStyle: ButtonStyle
+) : TextButtonStyle(baseStyle)
+
 /** Disable a [Button] by setting its [touchable][Button.touchable] and [color][Button.color] properties. */
 fun Button.disable() {
-    touchable= Touchable.disabled
-    color = Color.GRAY
+    touchable = Touchable.disabled
+    val oldStyle = style
+    val disabledStyle = BaseScreen.skin.get("disabled", TextButtonStyle::class.java)
+    if (oldStyle !is RestorableTextButtonStyle)
+        style = RestorableTextButtonStyle(disabledStyle, oldStyle)
 }
 /** Enable a [Button] by setting its [touchable][Button.touchable] and [color][Button.color] properties. */
 fun Button.enable() {
-    color = Color.WHITE
+    val oldStyle = style
+    if (oldStyle is RestorableTextButtonStyle) {
+        style = oldStyle.restoreStyle
+    }
     touchable = Touchable.enabled
 }
 /** Enable or disable a [Button] by setting its [touchable][Button.touchable] and [color][Button.color] properties,
@@ -57,6 +72,14 @@ fun Button.enable() {
 var Button.isEnabled: Boolean
     get() = touchable == Touchable.enabled
     set(value) = if (value) enable() else disable()
+
+fun colorFromHex(hexColor: Int): Color {
+    val colorSize = 16 * 16 // 2 hexadecimal digits
+    val r = hexColor / (colorSize * colorSize)
+    val g = (hexColor / colorSize) % colorSize
+    val b = hexColor % colorSize
+    return colorFromRGB(r, g, b)
+}
 
 /** Create a new [Color] instance from [r]/[g]/[b] given as Integers in the range 0..255 */
 fun colorFromRGB(r: Int, g: Int, b: Int) = Color(r / 255f, g / 255f, b / 255f, 1f)
@@ -253,14 +276,16 @@ fun Actor.centerX(parent: Stage) { x = parent.width / 2 - width / 2 }
 fun Actor.centerY(parent: Stage) { y = parent.height / 2 - height / 2 }
 fun Actor.center(parent: Stage) { centerX(parent); centerY(parent) }
 
+class OnClickListener(val sound: UncivSound = UncivSound.Click, val function: (event: InputEvent?, x: Float, y: Float) -> Unit):ClickListener(){
+    override fun clicked(event: InputEvent?, x: Float, y: Float) {
+        Concurrency.run("Sound") { SoundPlayer.play(sound) }
+        function(event, x, y)
+    }
+}
+
 /** same as [onClick], but sends the [InputEvent] and coordinates along */
 fun Actor.onClickEvent(sound: UncivSound = UncivSound.Click, function: (event: InputEvent?, x: Float, y: Float) -> Unit) {
-    this.addListener(object : ClickListener() {
-        override fun clicked(event: InputEvent?, x: Float, y: Float) {
-            Concurrency.run("Sound") { SoundPlayer.play(sound) }
-            function(event, x, y)
-        }
-    })
+    this.addListener(OnClickListener(sound, function))
 }
 
 // If there are other buttons that require special clicks then we'll have an onclick that will accept a string parameter, no worries
@@ -273,12 +298,14 @@ fun Actor.onClick(function: () -> Unit): Actor {
     return this
 }
 
+class OnChangeListener(val function: (event: ChangeEvent?) -> Unit):ChangeListener(){
+    override fun changed(event: ChangeEvent?, actor: Actor?) {
+        function(event)
+    }
+}
+
 fun Actor.onChange(function: (event: ChangeListener.ChangeEvent?) -> Unit): Actor {
-    this.addListener(object : ChangeListener() {
-        override fun changed(event: ChangeEvent?, actor: Actor?) {
-            function(event)
-        }
-    })
+    this.addListener(OnChangeListener(function))
     return this
 }
 
@@ -297,6 +324,55 @@ fun Actor.addBorder(size:Float, color: Color, expandCell:Boolean = false): Table
     table.pack()
     return table
 }
+
+/** Gets a parent of this actor that matches the [predicate], or null if none of its parents match the [predicate]. */
+fun Actor.getAscendant(predicate: (Actor) -> Boolean): Actor? {
+    var curParent = parent
+    while (curParent != null) {
+        if (predicate(curParent)) return curParent
+        curParent = curParent.parent
+    }
+    return null
+}
+
+/** The actors bounding box in stage coordinates */
+val Actor.stageBoundingBox: Rectangle get() {
+    val bottomleft = localToStageCoordinates(Vector2(0f, 0f))
+    val topright = localToStageCoordinates(Vector2(width, height))
+    return Rectangle(
+        bottomleft.x,
+        bottomleft.y,
+        topright.x - bottomleft.x,
+        topright.y - bottomleft.y
+    )
+}
+
+/** @return the area where this [Rectangle] overlaps with [other], or `null` if it doesn't overlap. */
+fun Rectangle.getOverlap(other: Rectangle): Rectangle? {
+    val overlapX = if (x > other.x) x else other.x
+
+    val rightX = x + width
+    val otherRightX = other.x + other.width
+    val overlapWidth = (if (rightX < otherRightX) rightX else otherRightX) - overlapX
+
+    val overlapY = if (y > other.y) y else other.y
+
+    val topY = y + height
+    val otherTopY = other.y + other.height
+    val overlapHeight = (if (topY < otherTopY) topY else otherTopY) - overlapY
+
+    val noOverlap = overlapWidth <= 0 || overlapHeight <= 0
+    if (noOverlap) return null
+    return Rectangle(
+        overlapX,
+        overlapY,
+        overlapWidth,
+        overlapHeight
+    )
+}
+
+val Rectangle.top get() = y + height
+val Rectangle.right get() = x + width
 
 fun Group.addBorderAllowOpacity(size:Float, color: Color): Group {
     val group = this
@@ -355,7 +431,10 @@ fun Image.setSize(size: Float) {
 }
 
 /** Translate a [String] and make a [TextButton] widget from it */
-fun String.toTextButton() = TextButton(this.tr(), BaseScreen.skin)
+fun String.toTextButton(style: TextButtonStyle? = null): TextButton {
+    val text = this.tr()
+    return if (style == null) TextButton(text, BaseScreen.skin) else TextButton(text, style)
+}
 
 /** Translate a [String] and make a [Label] widget from it */
 fun String.toLabel() = Label(this.tr(), BaseScreen.skin)

@@ -5,7 +5,6 @@ import com.badlogic.gdx.scenes.scene2d.Touchable
 import com.badlogic.gdx.scenes.scene2d.ui.Image
 import com.badlogic.gdx.scenes.scene2d.ui.Table
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton
-import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.utils.Align
 import com.unciv.Constants
 import com.unciv.models.ruleset.Ruleset
@@ -15,6 +14,7 @@ import com.unciv.ui.newgamescreen.TranslatedSelectBox
 import com.unciv.ui.utils.BaseScreen
 import com.unciv.ui.utils.ExpanderTab
 import com.unciv.ui.utils.KeyCharAndCode
+import com.unciv.ui.utils.UncivTextField
 import com.unciv.ui.utils.UncivTooltip.Companion.addTooltip
 import com.unciv.ui.utils.extensions.keyShortcuts
 import com.unciv.ui.utils.extensions.onActivation
@@ -22,6 +22,7 @@ import com.unciv.ui.utils.extensions.onChange
 import com.unciv.ui.utils.extensions.surroundWithCircle
 import com.unciv.ui.utils.extensions.toLabel
 import com.unciv.ui.utils.extensions.toTextButton
+import com.unciv.utils.Log
 import kotlin.math.sign
 
 /**
@@ -72,12 +73,43 @@ class ModManagementOptions(private val modManagementScreen: ModManagementScreen)
         }
     }
 
-    private val textField = TextField("", BaseScreen.skin)
-    fun getFilterText(): String = textField.text
+    enum class Category(
+        val label: String,
+        val topic: String
+    ) {
+        All("All mods", "unciv-mod"),
+        Rulesets("Rulesets", "unciv-mod-rulesets"),
+        Expansions("Expansions", "unciv-mod-expansions"),
+        Graphics("Graphics", "unciv-mod-graphics"),
+        Audio("Audio", "unciv-mod-audio"),
+        Maps("Maps", "unciv-mod-maps"),
+        Fun("Fun", "unciv-mod-fun"),
+        ModsOfMods("Mods of mods", "unciv-mod-modsofmods");
 
+        companion object {
+            fun fromSelectBox(selectBox: TranslatedSelectBox): Category {
+                val selected = selectBox.selected.value
+                return values().firstOrNull { it.label == selected } ?: All
+            }
+        }
+    }
+
+    class Filter(
+        val text: String,
+        val topic: String
+    )
+
+    fun getFilter(): Filter {
+        return Filter(textField.text, category.topic)
+    }
+
+    private val textField = UncivTextField.create("Enter search text")
+
+    var category = Category.All
     var sortInstalled = SortType.Name
     var sortOnline = SortType.Stars
 
+    private val categorySelect: TranslatedSelectBox
     private val sortInstalledSelect: TranslatedSelectBox
     private val sortOnlineSelect: TranslatedSelectBox
 
@@ -85,8 +117,6 @@ class ModManagementOptions(private val modManagementScreen: ModManagementScreen)
     val expander: ExpanderTab
 
     init {
-        textField.messageText = "Enter search text"
-
         val searchIcon = ImageGetter.getImage("OtherIcons/Search")
             .surroundWithCircle(50f, color = Color.CLEAR)
 
@@ -110,6 +140,17 @@ class ModManagementOptions(private val modManagementScreen: ModManagementScreen)
             modManagementScreen.refreshOnlineModTable()
         }
 
+        categorySelect = TranslatedSelectBox(
+            Category.values().map { category -> category.label },
+            category.label,
+            BaseScreen.skin
+        )
+        categorySelect.onChange {
+            category = Category.fromSelectBox(categorySelect)
+            modManagementScreen.refreshInstalledModTable()
+            modManagementScreen.refreshOnlineModTable()
+        }
+
         expander = ExpanderTab(
             "Sort and Filter",
             fontSize = Constants.defaultFontSize,
@@ -126,6 +167,8 @@ class ModManagementOptions(private val modManagementScreen: ModManagementScreen)
                 add(textField).pad(0f, 5f, 0f, 5f).growX()
                 add(searchIcon).right()
             }).colspan(2).growX().padBottom(7.5f).row()
+            it.add("Category:".toLabel()).left()
+            it.add(categorySelect).right().padBottom(7.5f).row()
             it.add("Sort Current:".toLabel()).left()
             it.add(sortInstalledSelect).right().padBottom(7.5f).row()
             it.add("Sort Downloadable:".toLabel()).left()
@@ -197,12 +240,21 @@ class ModUIData(
     fun lastUpdated() = ruleset?.modOptions?.lastUpdated ?: repo?.pushed_at ?: ""
     fun stargazers() = repo?.stargazers_count ?: 0
     fun author() = ruleset?.modOptions?.author ?: repo?.owner?.login ?: ""
-    fun matchesFilter(filterText: String): Boolean = when {
-        filterText.isEmpty() -> true
-        name.contains(filterText, true) -> true
+    fun matchesFilter(filter: ModManagementOptions.Filter): Boolean = when {
+        !matchesCategory(filter) -> false
+        filter.text.isEmpty() -> true
+        name.contains(filter.text, true) -> true
         // description.contains(filterText, true) -> true // too many surprises as description is different in the two columns
-        author().contains(filterText, true) -> true
+        author().contains(filter.text, true) -> true
         else -> false
+    }
+    private fun matchesCategory(filter: ModManagementOptions.Filter): Boolean {
+        val modTopic = repo?.topics ?: ruleset?.modOptions?.topics!!
+        if (filter.topic == ModManagementOptions.Category.All.topic)
+            return true
+        if (modTopic.size < 2) return false
+        if (modTopic[1] == filter.topic) return true
+        return false
     }
 }
 

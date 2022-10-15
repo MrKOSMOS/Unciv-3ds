@@ -13,11 +13,10 @@ import com.unciv.UncivGame
 import com.unciv.models.metadata.GameSettings
 import com.unciv.models.translations.TranslationFileWriter
 import com.unciv.models.translations.tr
-import com.unciv.ui.popup.YesNoPopup
+import com.unciv.ui.popup.ConfirmPopup
 import com.unciv.ui.utils.BaseScreen
 import com.unciv.ui.utils.FontFamilyData
 import com.unciv.ui.utils.Fonts
-import com.unciv.ui.utils.KeyCharAndCode
 import com.unciv.ui.utils.UncivSlider
 import com.unciv.ui.utils.UncivTooltip.Companion.addTooltip
 import com.unciv.ui.utils.extensions.disable
@@ -66,6 +65,8 @@ fun advancedTab(
 
     addFontFamilySelect(this, settings, optionsPopup.selectBoxMinWidth, onFontChange)
 
+    addFontSizeMultiplier(this, settings, onFontChange)
+
     addTranslationGeneration(this, optionsPopup)
 
     addSetUserId(this, settings)
@@ -88,8 +89,7 @@ private fun addAutosaveTurnsSelectBox(table: Table, settings: GameSettings) {
     }
 }
 
-private
-fun addFontFamilySelect(table: Table, settings: GameSettings, selectBoxMinWidth: Float, onFontChange: () -> Unit) {
+private fun addFontFamilySelect(table: Table, settings: GameSettings, selectBoxMinWidth: Float, onFontChange: () -> Unit) {
     table.add("Font family".toLabel()).left().fillX()
     val selectCell = table.add()
     table.row()
@@ -130,6 +130,29 @@ fun addFontFamilySelect(table: Table, settings: GameSettings, selectBoxMinWidth:
         }
         launchOnGLThread { loadFontSelect(fonts, selectCell) }
     }
+}
+
+private fun addFontSizeMultiplier(
+    table: Table,
+    settings: GameSettings,
+    onFontChange: () -> Unit
+) {
+    table.add("Font size multiplier".toLabel()).left().fillX()
+
+    val fontSizeSlider = UncivSlider(
+        0.7f, 1.5f, 0.05f,
+        initial = settings.fontSizeMultiplier
+    ) {
+        settings.fontSizeMultiplier = it
+        settings.save()
+    }
+    fontSizeSlider.onChange {
+        if (!fontSizeSlider.isDragging) {
+            Fonts.resetFont(settings.fontFamily)
+            onFontChange()
+        }
+    }
+    table.add(fontSizeSlider).pad(5f).row()
 }
 
 private fun addMaxZoomSlider(table: Table, settings: GameSettings) {
@@ -174,7 +197,11 @@ private fun addSetUserId(table: Table, settings: GameSettings) {
             try {
                 val clipboardContents = Gdx.app.clipboard.contents.trim()
                 UUID.fromString(clipboardContents)
-                YesNoPopup("Doing this will reset your current user ID to the clipboard contents - are you sure?",table.stage) {
+                ConfirmPopup(
+                    table.stage,
+                    "Doing this will reset your current user ID to the clipboard contents - are you sure?",
+                    "Take user ID from clipboard"
+                ) {
                     settings.multiplayer.userId = clipboardContents
                     settings.save()
                     idSetLabel.setFontColor(Color.WHITE).setText("ID successfully set!".tr())

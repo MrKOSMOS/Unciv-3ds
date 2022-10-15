@@ -4,6 +4,7 @@ import com.unciv.Constants
 import com.unciv.MainMenuScreen
 import com.unciv.UncivGame
 import com.unciv.logic.GameInfo
+import com.unciv.logic.UncivShowableException
 import com.unciv.ui.multiplayer.MultiplayerHelpers
 import com.unciv.ui.popup.Popup
 import com.unciv.ui.popup.ToastPopup
@@ -17,10 +18,10 @@ import com.unciv.utils.Log
 
 object QuickSave {
     fun save(gameInfo: GameInfo, screen: WorldScreen) {
-        val gameSaver = UncivGame.Current.gameSaver
+        val files = UncivGame.Current.files
         val toast = ToastPopup("Quicksaving...", screen)
         Concurrency.runOnNonDaemonThreadPool("QuickSaveGame") {
-            gameSaver.saveGame(gameInfo, "QuickSave") {
+            files.saveGame(gameInfo, "QuickSave") {
                 launchOnGLThread {
                     toast.close()
                     if (it != null)
@@ -33,20 +34,22 @@ object QuickSave {
     }
 
     fun load(screen: WorldScreen) {
-        val gameSaver = UncivGame.Current.gameSaver
+        val files = UncivGame.Current.files
         val toast = ToastPopup("Quickloading...", screen)
         Concurrency.run("QuickLoadGame") {
             try {
-                val loadedGame = gameSaver.loadGameByName("QuickSave")
+                val loadedGame = files.loadGameByName("QuickSave")
                 launchOnGLThread {
                     toast.close()
                     UncivGame.Current.loadGame(loadedGame)
                     ToastPopup("Quickload successful.", screen)
                 }
             } catch (ex: Exception) {
+                Log.error("Exception while quickloading", ex)
+                val (message) = LoadGameScreen.getLoadExceptionMessage(ex)
                 launchOnGLThread {
                     toast.close()
-                    ToastPopup("Could not load game!", screen)
+                    ToastPopup(message, screen)
                 }
             }
         }
@@ -67,7 +70,7 @@ object QuickSave {
 
             val savedGame: GameInfo
             try {
-                savedGame = screen.game.gameSaver.loadLatestAutosave()
+                savedGame = screen.game.files.loadLatestAutosave()
             } catch (oom: OutOfMemoryError) {
                 outOfMemory()
                 return@run
@@ -75,7 +78,8 @@ object QuickSave {
                 Log.error("Could not autoload game", ex)
                 launchOnGLThread {
                     loadingPopup.close()
-                    ToastPopup("Cannot resume game!", screen)
+                    val (message) = LoadGameScreen.getLoadExceptionMessage(ex, "Cannot resume game!")
+                    ToastPopup(message, screen)
                 }
                 return@run
             }
@@ -85,9 +89,15 @@ object QuickSave {
                     screen.game.onlineMultiplayer.loadGame(savedGame)
                 } catch (oom: OutOfMemoryError) {
                     outOfMemory()
+                } catch (notAPlayer: UncivShowableException) {
+                    val (message) = LoadGameScreen.getLoadExceptionMessage(notAPlayer)
+                    launchOnGLThread {
+                        loadingPopup.close()
+                        ToastPopup(message, screen)
+                    }
                 } catch (ex: Exception) {
-                    val message = MultiplayerHelpers.getLoadExceptionMessage(ex)
                     Log.error("Could not autoload game", ex)
+                    val (message) = LoadGameScreen.getLoadExceptionMessage(ex)
                     launchOnGLThread {
                         loadingPopup.close()
                         ToastPopup(message, screen)

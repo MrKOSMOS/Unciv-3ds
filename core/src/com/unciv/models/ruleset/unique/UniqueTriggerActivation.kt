@@ -6,6 +6,7 @@ import com.unciv.logic.city.CityInfo
 import com.unciv.logic.civilization.*
 import com.unciv.logic.map.MapUnit
 import com.unciv.logic.map.TileInfo
+import com.unciv.models.ruleset.BeliefType
 import com.unciv.models.ruleset.Victory
 import com.unciv.models.ruleset.unique.UniqueType.*
 import com.unciv.models.stats.Stat
@@ -25,7 +26,7 @@ object UniqueTriggerActivation {
         tile: TileInfo? = null,
         notification: String? = null
     ): Boolean {
-        val timingConditional = unique.conditionals.firstOrNull{it.type == ConditionalTimedUnique}
+        val timingConditional = unique.conditionals.firstOrNull { it.type == ConditionalTimedUnique }
         if (timingConditional != null) {
             civInfo.temporaryUniques.add(TemporaryUnique(unique, timingConditional.params[0].toInt()))
             return true
@@ -78,7 +79,13 @@ object UniqueTriggerActivation {
                 return true
             }
             OneTimeFreeUnitRuins -> {
-                val unit = civInfo.getEquivalentUnit(unique.params[0])
+                var unit = civInfo.getEquivalentUnit(unique.params[0])
+                if ( unit.hasUnique(UniqueType.FoundCity) && civInfo.isOneCityChallenger()) {
+                     val replacementUnit = ruleSet.units.values.firstOrNull{it.getMatchingUniques(UniqueType.BuildImprovements)
+                            .any { it.params[0] == "Land" }} ?: return false
+                    unit = civInfo.getEquivalentUnit(replacementUnit.name)
+                }
+
                 val placingTile =
                     tile ?: civInfo.cities.random().getCenterTile()
 
@@ -248,15 +255,6 @@ object UniqueTriggerActivation {
                 return true
             }
 
-            TimedAttackStrength -> {
-                val temporaryUnique = TemporaryUnique(unique, unique.params[2].toInt())
-                civInfo.temporaryUniques.add(temporaryUnique)
-                if (notification != null) {
-                    civInfo.addNotification(notification, NotificationIcon.War)
-                }
-                return true
-            }
-
             OneTimeRevealEntireMap -> {
                 if (notification != null) {
                     civInfo.addNotification(notification, LocationAction(tile?.position), NotificationIcon.Scout)
@@ -339,7 +337,7 @@ object UniqueTriggerActivation {
 
                 val foundStatAmount =
                     (tileBasedRandom.nextInt(unique.params[0].toInt(), unique.params[1].toInt()) *
-                            civInfo.gameInfo.gameParameters.gameSpeed.modifier
+                            civInfo.gameInfo.speed.statCostModifiers[stat]!!
                             ).toInt()
 
                 civInfo.addStat(
@@ -390,6 +388,22 @@ object UniqueTriggerActivation {
                     civInfo.addNotification(notificationText, LocationAction(tile?.position), NotificationIcon.Faith)
                 }
 
+                return true
+            }
+            OneTimeFreeBelief -> {
+                if (!civInfo.isMajorCiv()) return false
+                val beliefType = BeliefType.valueOf(unique.params[0])
+                val religionManager = civInfo.religionManager
+                if ((beliefType != BeliefType.Pantheon && beliefType != BeliefType.Any)
+                        && religionManager.religionState <= ReligionState.Pantheon)
+                    return false // situation where we're trying to add a formal religion belief to a civ that hasn't founded a religion
+                if (religionManager.numberOfBeliefsAvailable(beliefType) == 0)
+                    return false // no more available beliefs of this type
+
+                if (beliefType == BeliefType.Any && religionManager.religionState <= ReligionState.Pantheon)
+                    religionManager.freeBeliefs.add(BeliefType.Pantheon.name, 1) // add pantheon instead of any type
+                else
+                    religionManager.freeBeliefs.add(beliefType.name, 1)
                 return true
             }
 
@@ -463,8 +477,28 @@ object UniqueTriggerActivation {
                 return true
             }
 
-            FreeStatBuildings, FreeSpecificBuildings ->
+            OneTimeGlobalSpiesWhenEnteringEra -> {
+                if (!civInfo.isMajorCiv()) return false
+                if (!civInfo.gameInfo.isEspionageEnabled()) return false
+                val currentEra = civInfo.getEra().name
+                for (otherCiv in civInfo.gameInfo.getAliveMajorCivs()) {
+                    if (currentEra !in otherCiv.espionageManager.erasSpyEarnedFor) {
+                        val spyName = otherCiv.espionageManager.addSpy()
+                        otherCiv.espionageManager.erasSpyEarnedFor.add(currentEra)
+                        if (otherCiv == civInfo || otherCiv.knows(civInfo))
+                            // We don't tell which civilization entered the new era, as that is done in the notification directly above this one
+                            otherCiv.addNotification("We have recruited [${spyName}] as a spy!", NotificationIcon.Spy)
+                        else
+                            otherCiv.addNotification("After an unknown civilization entered the [${currentEra}], we have recruited [${spyName}] as a spy!", NotificationIcon.Spy)
+                    }
+                }
+                return true
+            }
+
+            FreeStatBuildings, FreeSpecificBuildings -> {
                 civInfo.civConstructions.tryAddFreeBuildings()
+                return true // not fully correct
+            }
 
             else -> {}
         }

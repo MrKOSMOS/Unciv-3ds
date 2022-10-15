@@ -1,3 +1,364 @@
+## 4.2.13
+
+Don't show hidden improvements in nation info
+
+Fixed translations missing when cancelling a new game then resuming the old one
+
+Handle errors when renaming multiplayer games to impossible names
+
+Military units take most efficient route to capture civilians
+
+Translation fixes
+
+## 4.2.12
+
+Slight performance improvements
+
+Create Cannot Move Unique - By itanasi
+
+Fixed softlock forcing you to found a pantheon without available beliefs - By xlenstra
+
+## 4.2.11
+
+By xlenstra:
+- Fixed crash when getting a spy and expanding a city simultaneously
+- Modding: Added conditional for 'We Love The King day'
+
+By nacro711072:
+- fix: display "null" text on battleTable when policy branch Autocracy complete
+
+Fix multiplayer turn checker option not showing up on Android  - By Azzurite
+
+Translation updates
+
+## 4.2.10
+
+New Desktop downloads start at fullscreen
+
+Special images for embarked units
+
+Moddable UI skins - By GGGuenni
+
+Global politics overview screen  - By alexban011
+
+## 4.2.9
+
+Starting in later eras triggers era uniques in all previous eras  - By xlenstra
+
+Generalize Great Wall unique  - By OptimizedForDensity
+
+By nacro711072:
+- fix wrong happiness point on resume game if adopted 'Cultural Diplomacy' policy.
+- fix no victoryTypes for the first time gaming with "quick game" opion.
+- Fixed: double unit while loading game from customFile.
+
+By xk730:
+- Increased help button size
+
+Unit art updates  - By GeneralWadaling
+
+## 4.2.8
+
+Show Unciv icon when loading game, instead of happy face
+
+AI: Recognize when no further techs can be researched, even if some techs are blocked
+
+Don't re-raise tech popups for previously researched techs
+
+By xlenstra:
+- Fixed bug disabling pantheon founding
+
+UI fix - By GGGuenni
+
+Add "UI Skin" to make it translatable  - By Ouaz
+
+Fixed bug on 'resume game' - By nacro711072
+
+## 4.2.7
+
+Better milestones for world religion
+
+Correct filtering of civs that need to have majority religion for world religion to activate
+
+Moddable UI skins - by GGGuenni
+
+Disable spectators from changing unit names  - By xlenstra
+
+Lots of translations
+
+## 4.2.6
+
+Fixed unit not giftable in one-sided open borders agreement - By huckdogg
+
+Better Mac support for running JARs - By nacro711072
+
+Added game option to disable unwanted spectators from a multiplayer game  - By alexban011
+
+Close app completely when clicked 'Exit' button  - By CrispyXYZ
+
+Lots of background work for future features :)
+
+## 4.2.5
+
+By JackRainy:
+- Suggest to adopt policy when the game starts with some culture
+
+Removed legacy tileset code  - By GGGuenni
+
+Improved options to rename units  - By huckdogg
+
+By xlenstra:
+- Fixed a crash when marrying a city-state without cities
+
+By Ouaz:
+- Translation and Tutorial improvements
+- Add an icon for "Wait" unit action
+
+Notificiations scroll fix in empire overview  - By MindaugasRumsa51
+
+Fix infinite city-state tribute bug  - By OptimizedForDensity
+
+## 4.2.4
+
+Mod translations are now loaded upon mod download
+
+By OptimizedForDensity:
+- List which city owns each tile in the city screen UI
+- Add free belief unique + refactor a few religion functions
+- Several pathfinding optimizations
+
+Fix missing "HP" in battle notifications - By Ouaz
+
+## 4.2.3
+
+By OptimizedForDensity:
+- Add unit type to Civilopedia
+- Fix bug related to resuming games
+- Fix mod translation file generation
+
+By xlenstra:
+- Occupied cities have +2 extra unhappiness
+- Added 'without resource' conditional
+- Added a unique for destroying improvements on attack
+
+Add missing string to the translations template file  - By estorski
+
+Made invisible units not become visible just by being next to an owned tile.  - By kralinc
+
+## 4.2.2
+
+By itanasi:
+- Add Damage numbers to Battle Notifications
+- Fix Air Sweep Notification Translations
+- Allow Citizen Management to pick any tile owned within 3 tiles
+
+Disabled image packing when running from JAR
+
+Removed duplicate "Consumes ..." lines of city screen  - By kasradzenika
+
+Add translation for "XP" - By OptimizedForDensity
+
+Tutorial rewording - By xlenstra
+
+Updated nation introduction in civilopedia - By xk730
+
+## 4.2.1
+
+Resolved missionary-related crash
+
+Fix erroneous relationship decay notification  - By oynqr
+
+Rename "Show minimap" to "Minimap size"  - By J0anJosep
+
+By SimonCeder:
+- Invalid players removed from global quests
+- Fix Natural Wonder placement
+
+By OptimizedForDensity:
+- Allow passable natural wonders
+
+Removed duplicate placeholders  - By xlenstra
+
+## 4.2.0
+
+Add Air Sweep  - By itanasi
+
+Allows inquisitors to block holy cities  - By xlenstra
+
+Performance improvements
+
+By SimonCeder:
+- workers will replace city ruins
+- avoid potential marriage bug
+
+Fix games not being loadable  - By Azzurite
+
+Construction automation optimization  - By OptimizedForDensity
+
+Allow HexaRealm to render jungles on hills  - By ArchDuque-Pancake
+
+## 4.1.21
+
+Memory performance improvements
+
+HexaRealm is now default tileset
+
+Mod categories - By alexban011
+
+Replace "moveTo" in unit overview with "Moving"  - By itanasi
+
+## 4.1.20
+
+Can no longer receive negative gold offers from AI
+
+Keep progress in notification scroll when updating
+
+Gray out city state friend bonus when allied - By Azzurite
+
+By OptimizedForDensity:
+- Minor reweight of AI policy selection
+- Stop transported units from being able to pillage tiles
+
+Fix getting settlers from ancient ruins on one-city challenge - By MindaugasRumsa51
+
+## 4.1.19
+
+Interception always takes an attack  - By itanasi
+
+By OptimizedForDensity:
+- Add more music triggers
+- Move border below icons
+- Significantly reduce AI turn time
+- City health updates when finishing health-increasing buildings
+
+By Azzurite:
+- Fix potential race condition in multiplayer game update
+- Fix game crashing when a multiplayer game can not be read
+
+Sorted Civilopedia eras - By alexban011
+
+Remove in-game mentions of 1.5x unhappiness for puppeted cities  - By Ouaz
+
+## 4.1.18
+
+Fix multiple capture uniques resulting in double-capture
+
+Resolved ANRs caused by fonts taking too long to load
+
+By OptimizedForDensity:
+- Fixed image problems in combat
+- Stop automate production setting from affecting other players' production in MP
+- Sort game speeds in Civilopedia by speed
+- Fix monastery purchase cost
+
+Remove double XP gain from Intercept  - By itanasi
+
+Multiplayer options UI fix - By Azzurite
+
+## 4.1.17
+
+Puppet cities generate no extra unhappiness (per Civ V)
+
+Resolved crash when resuming game after closing it quickly
+
+Modding: Removed deprecated uniques
+
+By OptimizedForDensity:
+- Improve AI belief picking
+- Unstack enemy unit strength modifiers
+- Prevent theme music tracks from randomly playing
+- Fix latest untranslated strings
+
+By alexban011:
+- Increase mod search request page size
+- Puppeted cities can no longer become capitals
+
+## 4.1.16
+
+By OptimizedForDensity:
+- Better AI targeting
+- Generalize production-to-stat conversion uniques
+- Performance improvements
+
+Unit icon opacity control - By letstalkaboutdune
+
+## 4.1.15
+
+By OptimizedForDensity:
+- Add support for era-specific unit sprites
+- Don't wake civilians to danger if they're in a city
+- Fix translation issues from nested brackets and braces
+
+By alexban011:
+- Fixed brackets in notification logs
+- Exception handling when loading mod options
+
+Moddable prettier Tutorials - By SomeTroglodyte
+
+By Azzurite:
+- Save compatibility handling
+- Fix OutOfMemoryError when loading a game and another is already loaded
+
+Fix crash when exploring - By Skekdog
+
+## 4.1.14
+
+By OptimizedForDensity:
+- Make mounted vs city penalties attack-only
+- Logistics allows move after attack
+- Fix crash when melee unit captures civilian then tries to attack it
+- Allow modded harbor-type buildings to connect cities
+- Fix "Religions to be founded" count
+
+By Azzurite:
+- Save uncaught exception to file
+
+Better exploring AI for ruins - By Skekdog
+
+By alexban011:
+- added gameParameter option to disable start bias
+- Added option to select font size
+- Add Notifications Log
+
+## 4.1.13
+
+By Azzurite:
+- Make popups and text fields nicer to interact with on Android
+
+Rework Policy and Diplomacy buttons  - By SomeTroglodyte
+
+By OptimizedForDensity:
+- Fix cases where AI GP get stuck building improvements
+- Fix disappearing terrain when switching between mods
+- Fix policies not contributing stats from city-states
+- AI missionaries avoid cities with inquisitors
+
+By alexban011:
+- CityScreen plays sound when opened
+- Religion no longer "majority" when it's exactly 50% of the cities
+
+## 4.1.12
+
+By Azzurite:
+- Many, many UX improvements!
+- Fixed memory leaks
+
+By OptimizedForDensity:
+- Moddable game speeds
+- Population reassignment bug fixes
+
+Civilopedia tweaks - By SomeTroglodyte
+
+Translation improvements - By J0anJosep
+
+Trigger Time Victory only if enabled  - By JackRainy
+
+Fix crash for "no strategic resource" mods - By Skekdog
+
+Shortcut fixes and additions - By doublep
+
+Maintain Fortify bonus after Fortify until Healed  - By itanasi
+
 ## 4.1.11
 
 AI considers liberating city-states from other civilizations  - By OptimizedForDensity

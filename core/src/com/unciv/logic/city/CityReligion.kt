@@ -1,15 +1,15 @@
 package com.unciv.logic.city
 
 import com.unciv.Constants
+import com.unciv.logic.IsPartOfGameInfoSerialization
 import com.unciv.logic.civilization.NotificationIcon
 import com.unciv.models.Counter
 import com.unciv.models.Religion
-import com.unciv.models.metadata.GameSpeed
 import com.unciv.models.ruleset.unique.Unique
 import com.unciv.models.ruleset.unique.UniqueType
 import com.unciv.ui.utils.extensions.toPercent
 
-class CityInfoReligionManager {
+class CityReligionManager : IsPartOfGameInfoSerialization {
     @Transient
     lateinit var cityInfo: CityInfo
 
@@ -23,28 +23,23 @@ class CityInfoReligionManager {
     private val followers: Counter<String> = Counter()
 
     @delegate:Transient
-    private val pressureFromAdjacentCities: Int by lazy {
-        when (cityInfo.civInfo.gameInfo.gameParameters.gameSpeed) {
-            GameSpeed.Quick -> 9
-            GameSpeed.Standard -> 6
-            GameSpeed.Epic -> 4
-            GameSpeed.Marathon -> 2
-        }
-    }
+    private val pressureFromAdjacentCities: Int by lazy { cityInfo.civInfo.gameInfo.speed.religiousPressureAdjacentCity }
 
     var religionThisIsTheHolyCityOf: String? = null
+    var isBlockedHolyCity = false
 
     init {
         clearAllPressures()
     }
 
-    fun clone(): CityInfoReligionManager {
-        val toReturn = CityInfoReligionManager()
+    fun clone(): CityReligionManager {
+        val toReturn = CityReligionManager()
         toReturn.cityInfo = cityInfo
         toReturn.religionsAtSomePointAdopted.addAll(religionsAtSomePointAdopted)
         toReturn.pressures.putAll(pressures)
         toReturn.followers.putAll(followers)
         toReturn.religionThisIsTheHolyCityOf = religionThisIsTheHolyCityOf
+        toReturn.isBlockedHolyCity = isBlockedHolyCity
         return toReturn
     }
 
@@ -240,15 +235,12 @@ class CityInfoReligionManager {
             addPressure(religionThisIsTheHolyCityOf!!,5 * pressureFromAdjacentCities, false)
         }
 
-        val allCitiesWithinSpreadRange =
-            cityInfo.civInfo.gameInfo.getCities()
-                .filter {
-                    it != cityInfo
-                    && it.getCenterTile().aerialDistanceTo(cityInfo.getCenterTile()) <= it.religion.getSpreadRange()
-                }
-        for (city in allCitiesWithinSpreadRange) {
+        for (city in cityInfo.civInfo.gameInfo.getCities()) {
+            if (city == cityInfo) continue
             val majorityReligionOfCity = city.religion.getMajorityReligionName() ?: continue
             if (!cityInfo.civInfo.gameInfo.religions[majorityReligionOfCity]!!.isMajorReligion()) continue
+            if (city.getCenterTile().aerialDistanceTo(cityInfo.getCenterTile())
+                    > city.religion.getSpreadRange()) continue
             addPressure(majorityReligionOfCity, city.religion.pressureAmountToAdjacentCities(cityInfo), false)
         }
 
@@ -290,11 +282,17 @@ class CityInfoReligionManager {
         return addedPressure
     }
 
-    fun isProtectedByInquisitor(): Boolean {
-        for (tile in cityInfo.getCenterTile().neighbors)
-            if (tile.civilianUnit?.hasUnique(UniqueType.PreventSpreadingReligion) == true)
-                return true
-        if (cityInfo.getCenterTile().civilianUnit?.name == "Inquisitor") return true
+    fun isProtectedByInquisitor(fromReligion: String? = null): Boolean {
+        for (tile in cityInfo.getCenterTile().getTilesInDistance(1)) {
+            for (unit in listOf(tile.civilianUnit, tile.militaryUnit)) {
+                if (unit?.religion != null
+                    && (fromReligion == null || unit.religion != fromReligion)
+                    && unit.hasUnique(UniqueType.PreventSpreadingReligion)
+                ) {
+                    return true
+                }
+            }
+        }
         return false
     }
 
@@ -315,5 +313,9 @@ class CityInfoReligionManager {
         }
 
         return pressure.toInt()
+    }
+
+    fun getPressureDeficit(otherReligion: String?): Int {
+        return (getPressures()[getMajorityReligionName()] ?: 0) - (getPressures()[otherReligion] ?: 0)
     }
 }

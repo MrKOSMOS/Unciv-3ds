@@ -5,7 +5,6 @@ import com.badlogic.gdx.Screen
 import com.badlogic.gdx.graphics.Color
 import com.badlogic.gdx.graphics.GL20
 import com.badlogic.gdx.graphics.g2d.BitmapFont
-import com.badlogic.gdx.graphics.g2d.SpriteBatch
 import com.badlogic.gdx.scenes.scene2d.Actor
 import com.badlogic.gdx.scenes.scene2d.Stage
 import com.badlogic.gdx.scenes.scene2d.ui.CheckBox
@@ -17,7 +16,8 @@ import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.badlogic.gdx.scenes.scene2d.utils.Drawable
 import com.badlogic.gdx.utils.viewport.ExtendViewport
 import com.unciv.UncivGame
-import com.unciv.models.Tutorial
+import com.unciv.models.TutorialTrigger
+import com.unciv.models.skins.SkinStrings
 import com.unciv.ui.UncivStage
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popup.activePopup
@@ -46,7 +46,7 @@ abstract class BaseScreen : Screen {
         val height = resolutions[1]
 
         /** The ExtendViewport sets the _minimum_(!) world size - the actual world size will be larger, fitted to screen/window aspect ratio. */
-        stage = UncivStage(ExtendViewport(height, height), SpriteBatch())
+        stage = UncivStage(ExtendViewport(height, height))
 
         if (enableSceneDebug) {
             stage.setDebugUnderMouse(true)
@@ -83,7 +83,11 @@ abstract class BaseScreen : Screen {
     }
 
     override fun resize(width: Int, height: Int) {
-        stage.viewport.update(width, height, true)
+        if (this !is RecreateOnResize) {
+            stage.viewport.update(width, height, true)
+        } else if (stage.viewport.screenWidth != width || stage.viewport.screenHeight != height) {
+            game.replaceCurrentScreen(recreate())
+        }
     }
 
     override fun pause() {}
@@ -92,9 +96,11 @@ abstract class BaseScreen : Screen {
 
     override fun hide() {}
 
-    override fun dispose() {}
+    override fun dispose() {
+        stage.dispose()
+    }
 
-    fun displayTutorial(tutorial: Tutorial, test: (() -> Boolean)? = null) {
+    fun displayTutorial(tutorial: TutorialTrigger, test: (() -> Boolean)? = null) {
         if (!game.settings.showTutorials) return
         if (game.settings.tutorialsShown.contains(tutorial.name)) return
         if (test != null && !test()) return
@@ -105,8 +111,10 @@ abstract class BaseScreen : Screen {
         var enableSceneDebug = false
 
         lateinit var skin: Skin
+        lateinit var skinStrings: SkinStrings
         fun setSkin() {
             Fonts.resetFont()
+            skinStrings = SkinStrings()
             skin = Skin().apply {
                 add("Nativefont", Fonts.font, BitmapFont::class.java)
                 add("RoundedEdgeRectangle", ImageGetter.getRoundedEdgeRectangle(), Drawable::class.java)
@@ -150,4 +158,8 @@ abstract class BaseScreen : Screen {
     fun openOptionsPopup(startingPage: Int = OptionsPopup.defaultPage, onClose: () -> Unit = {}) {
         OptionsPopup(this, startingPage, onClose).open(force = true)
     }
+}
+
+interface RecreateOnResize {
+    fun recreate(): BaseScreen
 }

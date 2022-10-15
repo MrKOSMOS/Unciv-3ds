@@ -6,9 +6,9 @@ class ModConstants {
     var maxXPfromBarbarians = 30
 
     // Formula for city Strength:
-    // Strength = baseStrength + strengthPerPop + strengthFromTiles + 
-    //            ((%techs * multiplier) ^ exponent) * fullMultiplier + 
-    //            (garrisonBonus * garrisonUnitStrength * garrisonUnitHealth/100) + 
+    // Strength = baseStrength + strengthPerPop + strengthFromTiles +
+    //            ((%techs * multiplier) ^ exponent) * fullMultiplier +
+    //            (garrisonBonus * garrisonUnitStrength * garrisonUnitHealth/100) +
     //            defensiveBuildingStrength
     // where %techs is the percentage of techs in the tech tree that are complete
     // If no techs exist in this ruleset, %techs = 0.5 (=50%)
@@ -18,10 +18,10 @@ class ModConstants {
     var cityStrengthFromTechsExponent = 2.8
     var cityStrengthFromTechsFullMultiplier = 1.0
     var cityStrengthFromGarrison = 0.2
- 
+
     // Formula for Unit Supply:
     // Supply = unitSupplyBase (difficulties.json)
-    //          unitSupplyPerCity * amountOfCities + (difficulties.json) 
+    //          unitSupplyPerCity * amountOfCities + (difficulties.json)
     //          unitSupplyPerPopulation * amountOfPopulationInAllCities
     // unitSupplyBase and unitSupplyPerCity can be found in difficulties.json
     // unitSupplyBase, unitSupplyPerCity and unitSupplyPerPopulation can also be increased through uniques
@@ -38,7 +38,7 @@ class ModConstants {
     class UnitUpgradeCost {
         val base = 10f
         val perProduction = 2f
-        val eraMultiplier = 0f  // 0.3 in Civ5 cpp sources but 0 in xml 
+        val eraMultiplier = 0f  // 0.3 in Civ5 cpp sources but 0 in xml
         val exponent = 1f
         val roundTo = 5
     }
@@ -60,7 +60,7 @@ class ModConstants {
     // RiverGenerator: river frequency and length bounds
     var riverCountMultiplier = 0.01f
     var minRiverLength = 5
-    var maxRiverLength = 666  // Do not set < max map radius
+    var maxRiverLength = 666  // Do not set to less than the maximal map radius
 
     fun merge(other: ModConstants) {
         if (other.maxXPfromBarbarians != defaults.maxXPfromBarbarians) maxXPfromBarbarians = other.maxXPfromBarbarians

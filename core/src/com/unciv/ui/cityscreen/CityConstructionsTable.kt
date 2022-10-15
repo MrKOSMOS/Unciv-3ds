@@ -23,7 +23,7 @@ import com.unciv.models.translations.tr
 import com.unciv.ui.audio.SoundPlayer
 import com.unciv.ui.images.ImageGetter
 import com.unciv.ui.popup.Popup
-import com.unciv.ui.popup.YesNoPopup
+import com.unciv.ui.popup.ConfirmPopup
 import com.unciv.ui.popup.closeAllPopups
 import com.unciv.ui.utils.BaseScreen
 import com.unciv.ui.utils.ExpanderTab
@@ -444,6 +444,8 @@ class CityConstructionsTable(private val cityScreen: CityScreen) {
             is BaseUnit -> UncivSound.Promote
             PerpetualConstruction.gold -> UncivSound.Coin
             PerpetualConstruction.science -> UncivSound.Paper
+            PerpetualConstruction.culture -> UncivSound.Policy
+            PerpetualConstruction.faith -> UncivSound.Choir
             else -> UncivSound.Click
         }
     }
@@ -517,9 +519,11 @@ class CityConstructionsTable(private val cityScreen: CityScreen) {
 
         val purchasePrompt = "Currently you have [${city.getStatReserve(stat)}] [${stat.name}].".tr() + "\n\n" +
                 "Would you like to purchase [${construction.name}] for [$constructionBuyCost] [${stat.character}]?".tr()
-        YesNoPopup(
+        ConfirmPopup(
+            cityScreen,
             purchasePrompt,
-            screen = cityScreen,
+            "Purchase",
+            true,
             restoreDefault = { cityScreen.update() }
         ) { purchaseConstruction(construction, stat, tile) }.open()
     }

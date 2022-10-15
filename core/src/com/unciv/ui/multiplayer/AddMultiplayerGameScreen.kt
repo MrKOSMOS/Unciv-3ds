@@ -2,12 +2,13 @@ package com.unciv.ui.multiplayer
 
 import com.badlogic.gdx.Gdx
 import com.badlogic.gdx.scenes.scene2d.ui.Table
-import com.badlogic.gdx.scenes.scene2d.ui.TextField
 import com.unciv.logic.IdChecker
 import com.unciv.models.translations.tr
 import com.unciv.ui.pickerscreens.PickerScreen
 import com.unciv.ui.popup.Popup
 import com.unciv.ui.popup.ToastPopup
+import com.unciv.ui.saves.LoadGameScreen
+import com.unciv.ui.utils.UncivTextField
 import com.unciv.ui.utils.extensions.enable
 import com.unciv.ui.utils.extensions.onClick
 import com.unciv.ui.utils.extensions.toLabel
@@ -16,10 +17,10 @@ import com.unciv.utils.concurrency.Concurrency
 import com.unciv.utils.concurrency.launchOnGLThread
 import java.util.*
 
-class AddMultiplayerGameScreen(backScreen: MultiplayerScreen) : PickerScreen() {
+class AddMultiplayerGameScreen : PickerScreen() {
     init {
-        val gameNameTextField = TextField("", skin)
-        val gameIDTextField = TextField("", skin)
+        val gameNameTextField = UncivTextField.create("Game name")
+        val gameIDTextField = UncivTextField.create("GameID")
         val pasteGameIDButton = "Paste gameID from clipboard".toTextButton()
         pasteGameIDButton.onClick {
             gameIDTextField.text = Gdx.app.clipboard.contents
@@ -37,7 +38,7 @@ class AddMultiplayerGameScreen(backScreen: MultiplayerScreen) : PickerScreen() {
         //CloseButton Setup
         closeButton.setText("Back".tr())
         closeButton.onClick {
-            backScreen.game.setScreen(backScreen)
+            game.popScreen()
         }
 
         //RightSideButton Setup
@@ -60,10 +61,10 @@ class AddMultiplayerGameScreen(backScreen: MultiplayerScreen) : PickerScreen() {
                     game.onlineMultiplayer.addGame(gameIDTextField.text.trim(), gameNameTextField.text.trim())
                     launchOnGLThread {
                         popup.close()
-                        game.setScreen(backScreen)
+                        game.popScreen()
                     }
                 } catch (ex: Exception) {
-                    val message = MultiplayerHelpers.getLoadExceptionMessage(ex)
+                    val (message) = LoadGameScreen.getLoadExceptionMessage(ex)
                     launchOnGLThread {
                         popup.reuseWith(message, true)
                     }

@@ -9,6 +9,7 @@ import com.unciv.logic.map.MapResources
 import com.unciv.logic.map.MapShape
 import com.unciv.logic.map.TileInfo
 import com.unciv.logic.map.TileMap
+import com.unciv.models.metadata.GameParameters
 import com.unciv.models.ruleset.Ruleset
 import com.unciv.models.ruleset.tile.ResourceType
 import com.unciv.models.ruleset.tile.Terrain
@@ -211,7 +212,7 @@ class MapRegions (val ruleset: Ruleset){
         return Pair(splitOffRegion, regionToSplit)
     }
 
-    fun assignRegions(tileMap: TileMap, civilizations: List<CivilizationInfo>) {
+    fun assignRegions(tileMap: TileMap, civilizations: List<CivilizationInfo>, gameParameters: GameParameters) {
         if (civilizations.isEmpty()) return
 
         // first assign region types
@@ -269,6 +270,12 @@ class MapRegions (val ruleset: Ruleset){
 
         // First assign coast bias civs
         for (civ in coastBiasCivs) {
+            // If noStartBias is enabled consider these to be randomCivs
+            if (gameParameters.noStartBias) {
+                randomCivs.addAll(coastBiasCivs)
+                break
+            }
+
             // Try to find a coastal start, preferably a really coastal one
             var startRegion = unpickedRegions.filter { tileMap[it.startPosition!!].isCoastalTile() }
                     .maxByOrNull { it.terrainCounts["Coastal"] ?: 0 }
@@ -307,6 +314,12 @@ class MapRegions (val ruleset: Ruleset){
 
         // Next do positive bias civs
         for (civ in positiveBiasCivs) {
+            // If noStartBias is enabled consider these to be randomCivs
+            if (gameParameters.noStartBias) {
+                randomCivs.addAll(positiveBiasCivs)
+                break
+            }
+
             // Try to find a start that matches any of the desired regions, ideally with lots of desired terrain
             val preferred = ruleset.nations[civ.civName]!!.startBias
             val startRegion = unpickedRegions.filter { it.type in preferred }
@@ -331,6 +344,12 @@ class MapRegions (val ruleset: Ruleset){
 
         // Next do negative bias ones (ie "Avoid []")
         for (civ in negativeBiasCivs) {
+            // If noStartBias is enabled consider these to be randomCivs
+            if (gameParameters.noStartBias) {
+                randomCivs.addAll(negativeBiasCivs)
+                break
+            }
+
             val avoided = ruleset.nations[civ.civName]!!.startBias.map { it.getPlaceholderParameters()[0] }
             // Try to find a region not of the avoided types, secondary sort by least number of undesired terrains
             val startRegion = unpickedRegions.filterNot { it.type in avoided }
@@ -810,10 +829,21 @@ class MapRegions (val ruleset: Ruleset){
     }
 
     fun placeResourcesAndMinorCivs(tileMap: TileMap, minorCivs: List<CivilizationInfo>) {
+        placeNaturalWonderImpacts(tileMap)
         assignLuxuries()
         placeMinorCivs(tileMap, minorCivs)
         placeLuxuries(tileMap)
         placeStrategicAndBonuses(tileMap)
+    }
+
+    /** Places impacts from NWs that have been generated just prior to this step. */
+    private fun placeNaturalWonderImpacts(tileMap: TileMap) {
+        for (tile in tileMap.values.filter { it.isNaturalWonder() }) {
+            placeImpact(ImpactType.Bonus, tile, 1)
+            placeImpact(ImpactType.Strategic, tile, 1)
+            placeImpact(ImpactType.Luxury, tile, 1)
+            placeImpact(ImpactType.MinorCiv, tile, 1)
+        }
     }
 
     /** Assigns a luxury to each region. No luxury can be assigned to too many regions.
@@ -957,7 +987,7 @@ class MapRegions (val ruleset: Ruleset){
                 if (!canPlaceMinorCiv(tile)) continue
                 val continent = tile.getContinent()
                 if (continent in uninhabitedContinents) {
-                    if(tile.isCoastalTile())
+                    if (tile.isCoastalTile())
                         uninhabitedCoastal.add(tile)
                     else
                         uninhabitedHinterland.add(tile)
@@ -1001,17 +1031,17 @@ class MapRegions (val ruleset: Ruleset){
                     it.assignedMinorCivs.add(civToAssign)
                 }
             }
+        }
 
-            // STILL unassigned civs??
-            if (unassignedCivs.isNotEmpty()) {
-                // At this point there is at least for sure less remaining city states than regions
-                // Sort regions by fertility and put extra city states in the worst ones.
-                val worstRegions = regions.sortedBy { it.totalFertility }.take(unassignedCivs.size)
-                worstRegions.forEach {
-                    val civToAssign = unassignedCivs.first()
-                    unassignedCivs.remove(civToAssign)
-                    it.assignedMinorCivs.add(civToAssign)
-                }
+        // STILL unassigned civs??
+        if (unassignedCivs.isNotEmpty()) {
+            // At this point there is at least for sure less remaining city states than regions
+            // Sort regions by fertility and put extra city states in the worst ones.
+            val worstRegions = regions.sortedBy { it.totalFertility }.take(unassignedCivs.size)
+            worstRegions.forEach {
+                val civToAssign = unassignedCivs.first()
+                unassignedCivs.remove(civToAssign)
+                it.assignedMinorCivs.add(civToAssign)
             }
         }
 
@@ -1023,86 +1053,10 @@ class MapRegions (val ruleset: Ruleset){
         for (unplacedCiv in civAssignedToUninhabited) {
             regions.random().assignedMinorCivs.add(unplacedCiv)
         }
-        // Fallback lists for minor civs that can't be placed with any other method
-        val fallbackTiles = ArrayList<TileInfo>()
-        val fallbackMinors = ArrayList<CivilizationInfo>()
 
         // Now place the ones assigned to specific regions.
         for (region in regions) {
-            // Check the outer edges of the region, working inwards
-            val section = Rectangle(region.rect)
-            val unprocessedTiles = ArrayList<TileInfo>()
-            val regionCoastal = ArrayList<TileInfo>()
-            val regionHinterland = ArrayList<TileInfo>()
-            while (section.width >= 4 && section.height >= 4 && region.assignedMinorCivs.isNotEmpty()) {
-                // Clear the tile lists
-                unprocessedTiles.clear()
-                regionCoastal.clear()
-                regionHinterland.clear()
-                if (section.height > section.width) {
-                    // Check top and bottom
-                    unprocessedTiles.addAll(
-                            tileMap.getTilesInRectangle(
-                                    Rectangle(section.x, section.y, section.width, 1f),
-                                    evenQ = true)
-                    )
-                    unprocessedTiles.addAll(
-                            tileMap.getTilesInRectangle(
-                                    Rectangle(section.x, section.y + section.height - 1, section.width, 1f),
-                                    evenQ = true)
-                    )
-                    // Narrow the remaining section
-                    section.y += 1
-                    section.height -= 2
-                } else {
-                    // Check left and right
-                    unprocessedTiles.addAll(
-                            tileMap.getTilesInRectangle(
-                                    Rectangle(section.x, section.y, 1f, section.height),
-                                    evenQ = true)
-                    )
-                    unprocessedTiles.addAll(
-                            tileMap.getTilesInRectangle(
-                                    Rectangle(section.x + section.width - 1, section.y, 1f, section.height),
-                                    evenQ = true)
-                    )
-                    // Narrow the remaining section
-                    section.x += 1
-                    section.width -= 2
-                }
-                // Now process the tiles
-                for (tile in unprocessedTiles) {
-                    if (!canPlaceMinorCiv(tile)) continue
-                    if (!usingArchipelagoRegions && tile.getContinent() != region.continentID) continue
-                    if(tile.isCoastalTile())
-                        regionCoastal.add(tile)
-                    else
-                        regionHinterland.add(tile)
-                }
-                // Now attempt to place as many minor civs as possible, trying coastal tiles first
-                tryPlaceMinorCivsInTiles(region.assignedMinorCivs, tileMap, regionCoastal)
-                tryPlaceMinorCivsInTiles(region.assignedMinorCivs, tileMap, regionHinterland)
-            }
-            // In case we went through the entire region without finding spots for all assigned civs
-            if(region.assignedMinorCivs.isNotEmpty()) {
-                fallbackMinors.addAll(region.assignedMinorCivs)
-            } else {
-                // If we did find spots for all civs, there might be more eligible tiles left in the region
-                // Add them to the fallback list
-                fallbackTiles.addAll(regionCoastal)
-                fallbackTiles.addAll(regionHinterland)
-                fallbackTiles.addAll(tileMap.getTilesInRectangle(section, evenQ = true)
-                        .filter { canPlaceMinorCiv(it) }
-                )
-            }
-        }
-
-        // Finally attempt to place the fallback lists - the rest will be silently discarded
-        if (fallbackMinors.isNotEmpty()) {
-            // Throw in the uninhabited lists as well
-            fallbackTiles.addAll(uninhabitedCoastal)
-            fallbackTiles.addAll(uninhabitedHinterland)
-            tryPlaceMinorCivsInTiles(fallbackMinors, tileMap, fallbackTiles)
+            tryPlaceMinorCivsInTiles(region.assignedMinorCivs, tileMap, region.tiles.toMutableList())
         }
     }
 
@@ -1771,10 +1725,10 @@ class Region (val tileMap: TileMap, val rect: Rectangle, val continentID: Int = 
         // Count terrains in the region
         terrainCounts.clear()
         for (tile in tiles) {
-            val terrainsToCount = if (tile.getAllTerrains().any { it.hasUnique(UniqueType.IgnoreBaseTerrainForRegion) })
+            val terrainsToCount = if (tile.terrainHasUnique(UniqueType.IgnoreBaseTerrainForRegion))
                 tile.terrainFeatureObjects.map { it.name }.asSequence()
             else
-                tile.getAllTerrains().map { it.name }
+                tile.allTerrains.map { it.name }
             for (terrain in terrainsToCount) {
                 terrainCounts[terrain] = (terrainCounts[terrain] ?: 0) + 1
             }

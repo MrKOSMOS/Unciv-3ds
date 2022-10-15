@@ -79,9 +79,7 @@ class ReligionOverviewTab(
         }
 
         add("Religions to be founded:".toLabel())
-
-        val foundedReligions = viewingPlayer.gameInfo.civilizations.count { it.religionManager.religionState >= ReligionState.Religion }
-        add((viewingPlayer.religionManager.amountOfFoundableReligions() - foundedReligions).toLabel()).right().row()
+        add((viewingPlayer.religionManager.remainingFoundableReligions()).toLabel()).right().row()
 
         add("Religious status:".toLabel()).left()
         add(viewingPlayer.religionManager.religionState.toString().toLabel()).right().row()
@@ -144,7 +142,7 @@ class ReligionOverviewTab(
             else Constants.unknownNationName
         statsTable.add(foundingCivName.toLabel()).right().row()
         if (religion.isMajorReligion()) {
-            val holyCity = gameInfo.getCities().firstOrNull { it.religion.religionThisIsTheHolyCityOf == religion.name }
+            val holyCity = gameInfo.getCities().firstOrNull { it.isHolyCityOf(religion.name) }
             if (holyCity != null) {
                 statsTable.add("Holy City:".toLabel())
                 val cityName =
@@ -179,7 +177,7 @@ class ReligionOverviewTab(
         MarkupRenderer.render(
             belief.getCivilopediaTextLines(withHeader = true)
         ) {
-            UncivGame.Current.setScreen(CivilopediaScreen(gameInfo.ruleSet, overviewScreen, link = it))
+            UncivGame.Current.pushScreen(CivilopediaScreen(gameInfo.ruleSet, link = it))
         }.apply {
             background = ImageGetter.getBackground(ImageGetter.getBlue())
         }
